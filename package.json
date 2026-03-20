@@ -1,0 +1,36 @@
+{
+  "name": "session-converter",
+  "version": "0.2.0",
+  "description": "Bidirectional session converter between OpenAI Codex CLI and Anthropic Claude Code CLI. Convert and continue your AI coding sessions across tools.",
+  "type": "module",
+  "bin": {
+    "session-converter": "./src/cli.ts"
+  },
+  "scripts": {
+    "convert": "tsx src/cli.ts",
+    "list": "tsx src/cli.ts list",
+    "test": "tsx src/cli.ts list --json > /dev/null && echo 'OK'"
+  },
+  "keywords": [
+    "codex",
+    "claude",
+    "claude-code",
+    "openai",
+    "anthropic",
+    "session",
+    "converter",
+    "cli",
+    "ai-coding",
+    "jsonl"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.21.0"
+  }
+}

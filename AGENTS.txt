@@ -1,0 +1,51 @@
+SESSION-CONVERTER — AI CODING SESSION FORMAT CONVERTER
+======================================================
+
+PURPOSE: Converts session JSONL files between OpenAI Codex CLI and Anthropic Claude Code CLI formats.
+         Enables continuing a coding session started in one tool using the other.
+
+LOCATION: This is the session-converter project root directory.
+
+TOOL LOCATION: src/cli.ts (run with: npx tsx src/cli.ts)
+
+CAPABILITIES:
+- Bidirectional conversion: Codex CLI <-> Claude Code CLI
+- Auto-format detection from JSONL content
+- Session discovery: finds sessions in ~/.codex/sessions/ and ~/.claude/projects/
+- Session preview: shows first messages without converting
+- Partial session ID matching (8+ characters)
+- JSON output mode for programmatic use (--json flag)
+- Dry run mode (--dry-run flag)
+- Tool name mapping (exec_command <-> Bash, read_file <-> Read, etc.)
+- Full dump: messages, tool calls, tool results, progress events, metadata
+
+COMMANDS:
+  list [codex|claude]           — List recent sessions with previews
+  info <id|file>                — Show session metadata and record counts
+  preview <id|file>             — Show first messages from session
+  codex2claude <id|file>        — Convert Codex -> Claude Code
+  claude2codex <id|file>        — Convert Claude Code -> Codex
+  auto <id|file>                — Auto-detect and convert
+
+FLAGS:
+  --json         Machine-readable JSON output
+  --dry-run      Show conversion stats without writing
+  --output/-o    Custom output file path
+  --help/-h      Show help
+
+SESSION LOCATIONS:
+  Codex CLI:    ~/.codex/sessions/YYYY/MM/DD/rollout-DATETIME-UUID.jsonl
+  Claude Code:  ~/.claude/projects/-{PROJECT_PATH}/UUID.jsonl
+
+CONVERTED OUTPUT LOCATIONS:
+  Codex->Claude: ~/.claude/projects/-converted-from-codex/UUID.jsonl
+  Claude->Codex: ~/.codex/sessions/YYYY/MM/DD/converted-DATETIME-UUID.jsonl
+
+KNOWN LOSSY FIELDS:
+  - session_meta.base_instructions (Codex system prompt)
+  - developer role messages (prefixed with [SYSTEM/DEVELOPER])
+  - turn_context.collaboration_mode (Codex-specific)
+  - file-history-snapshot (Claude Code-specific)
+  - compacted summaries (expanded from replacement_history)
+
+DEPENDENCIES: Node.js 18+, tsx
