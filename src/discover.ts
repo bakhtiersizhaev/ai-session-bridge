@@ -12,11 +12,17 @@ export function codexSessionsDir(): string {
   return join(HOME, ".codex", "sessions");
 }
 
+/**
+ * Find an original (non-converted) Codex session by full or partial ID.
+ * Prioritizes "rollout-" files over "converted-" files.
+ */
 export function findCodexSession(sessionId: string): string | null {
   const base = codexSessionsDir();
   if (!existsSync(base)) return null;
 
-  // Walk year/month/day directories
+  let originalMatch: string | null = null;
+  let convertedMatch: string | null = null;
+
   for (const year of safeReaddir(base)) {
     const yp = join(base, year);
     if (!isDir(yp)) continue;
@@ -28,20 +34,34 @@ export function findCodexSession(sessionId: string): string | null {
         if (!isDir(dp)) continue;
         for (const file of safeReaddir(dp)) {
           if (file.includes(sessionId) && file.endsWith(".jsonl")) {
-            return join(dp, file);
+            const fp = join(dp, file);
+            if (file.startsWith("converted-")) {
+              convertedMatch = fp;
+            } else {
+              originalMatch = fp;
+            }
           }
         }
       }
     }
   }
-  return null;
+
+  return originalMatch || convertedMatch;
 }
 
-export function listCodexSessions(limit = 20): Array<{ id: string; file: string; date: string; size: number }> {
+export interface CodexSessionEntry {
+  id: string;
+  file: string;
+  date: string;
+  size: number;
+  converted: boolean;
+}
+
+export function listCodexSessions(limit = 20): CodexSessionEntry[] {
   const base = codexSessionsDir();
   if (!existsSync(base)) return [];
 
-  const sessions: Array<{ id: string; file: string; date: string; size: number; mtime: number }> = [];
+  const sessions: Array<CodexSessionEntry & { mtime: number }> = [];
 
   for (const year of safeReaddir(base)) {
     const yp = join(base, year);
@@ -56,14 +76,14 @@ export function listCodexSessions(limit = 20): Array<{ id: string; file: string;
           if (!file.endsWith(".jsonl")) continue;
           const fp = join(dp, file);
           const st = statSync(fp);
-          // Extract session ID from filename: rollout-DATETIME-SESSIONID.jsonl
-          const match = file.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/);
-          if (match) {
+          const uuidMatch = file.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/);
+          if (uuidMatch) {
             sessions.push({
-              id: match[1],
+              id: uuidMatch[1],
               file: fp,
               date: `${year}-${month}-${day}`,
               size: st.size,
+              converted: file.startsWith("converted-"),
               mtime: st.mtimeMs,
             });
           }
@@ -84,33 +104,55 @@ export function claudeProjectsDir(): string {
   return join(HOME, ".claude", "projects");
 }
 
+/**
+ * Find an original (non-converted) Claude Code session by full or partial ID.
+ * Skips the "-converted-from-codex" project directory.
+ */
 export function findClaudeSession(sessionId: string): string | null {
   const base = claudeProjectsDir();
   if (!existsSync(base)) return null;
 
+  let originalMatch: string | null = null;
+  let convertedMatch: string | null = null;
+
   for (const project of safeReaddir(base)) {
     const pp = join(base, project);
     if (!isDir(pp)) continue;
+    const isConverted = project === "-converted-from-codex";
     for (const file of safeReaddir(pp)) {
       if (file === `${sessionId}.jsonl`) {
-        return join(pp, file);
+        const fp = join(pp, file);
+        if (isConverted) {
+          convertedMatch = fp;
+        } else {
+          originalMatch = fp;
+        }
       }
     }
   }
-  return null;
+
+  return originalMatch || convertedMatch;
 }
 
-export function listClaudeSessions(limit = 20): Array<{ id: string; file: string; project: string; size: number }> {
+export interface ClaudeSessionEntry {
+  id: string;
+  file: string;
+  project: string;
+  size: number;
+  converted: boolean;
+}
+
+export function listClaudeSessions(limit = 20): ClaudeSessionEntry[] {
   const base = claudeProjectsDir();
   if (!existsSync(base)) return [];
 
-  const sessions: Array<{ id: string; file: string; project: string; size: number; mtime: number }> = [];
+  const sessions: Array<ClaudeSessionEntry & { mtime: number }> = [];
 
   for (const project of safeReaddir(base)) {
     const pp = join(base, project);
     if (!isDir(pp)) continue;
-    // Check for memory dir — skip it
     if (project === "memory") continue;
+    const isConverted = project === "-converted-from-codex";
     for (const file of safeReaddir(pp)) {
       if (!file.endsWith(".jsonl")) continue;
       const fp = join(pp, file);
@@ -121,6 +163,7 @@ export function listClaudeSessions(limit = 20): Array<{ id: string; file: string
         file: fp,
         project: project.replace(/^-/, "/").replace(/-/g, "/"),
         size: st.size,
+        converted: isConverted,
         mtime: st.mtimeMs,
       });
     }
@@ -139,10 +182,8 @@ export type DetectedFormat = "codex" | "claude" | "unknown";
 export function detectFormat(firstLine: string): DetectedFormat {
   try {
     const obj = JSON.parse(firstLine);
-    // Codex always has {timestamp, type, payload} wrapper
     if (obj.type === "session_meta" && obj.payload?.originator) return "codex";
     if (obj.type === "response_item" || obj.type === "event_msg" || obj.type === "turn_context") return "codex";
-    // Claude Code has {type:"user"|"assistant"|"progress"|"file-history-snapshot", sessionId, ...}
     if (obj.sessionId && (obj.type === "user" || obj.type === "assistant")) return "claude";
     if (obj.type === "file-history-snapshot") return "claude";
     return "unknown";

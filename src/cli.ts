@@ -1,14 +1,14 @@
 #!/usr/bin/env tsx
 /**
- * session-converter — Bidirectional Codex CLI <-> Claude Code session converter
+ * ai-session-bridge — Bridge AI coding sessions between Codex CLI and Claude Code
  *
  * Usage:
- *   session-converter codex2claude <session-id-or-file>  [--output <path>]
- *   session-converter claude2codex <session-id-or-file>  [--output <path>]
- *   session-converter auto         <session-id-or-file>  [--output <path>]
- *   session-converter list         [codex|claude]
- *   session-converter info         <session-id-or-file>
- *   session-converter preview      <session-id-or-file>
+ *   ai-session-bridge codex2claude <session-id-or-file>  [--output <path>]
+ *   ai-session-bridge claude2codex <session-id-or-file>  [--output <path>]
+ *   ai-session-bridge auto         <session-id-or-file>  [--output <path>]
+ *   ai-session-bridge list         [codex|claude]
+ *   ai-session-bridge info         <session-id-or-file>
+ *   ai-session-bridge preview      <session-id-or-file>
  */
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
@@ -26,46 +26,35 @@ import {
 } from "./discover.js";
 import type { ConversionMeta } from "./types.js";
 
-const VERSION = "0.2.0";
+const VERSION = "1.0.0";
+const NAME = "ai-session-bridge";
 
 const HELP = `
-session-converter v${VERSION}
-Bidirectional Codex CLI <-> Claude Code session converter
+${NAME} v${VERSION}
+Bridge AI coding sessions between Codex CLI and Claude Code
 
 Commands:
-  codex2claude <id|file> [--output <path>]   Convert Codex session to Claude Code format
-  claude2codex <id|file> [--output <path>]   Convert Claude Code session to Codex format
-  auto         <id|file> [--output <path>]   Auto-detect format and convert to the other
-  list         [codex|claude]                List recent sessions with previews
-  info         <id|file>                     Show detailed session info
-  preview      <id|file>                     Show first messages from session
+  codex2claude <id|file> [--output <path>]   Convert Codex session -> Claude Code format
+  claude2codex <id|file> [--output <path>]   Convert Claude Code session -> Codex format
+  auto         <id|file> [--output <path>]   Auto-detect format and bridge to the other
+  list         [codex|claude]                List recent sessions with message previews
+  info         <id|file>                     Show detailed session metadata
+  preview      <id|file>                     Show first messages from a session
 
 Options:
   --output, -o <path>    Output file path (default: auto-generated)
-  --json                 Output result as JSON (for AI agent consumption)
-  --dry-run              Show what would be converted without writing
-  --preview-lines <n>    Number of message previews to show (default: 5)
+  --json                 Machine-readable JSON output (for AI agents)
+  --dry-run              Preview conversion stats without writing files
+  --preview-lines <n>    Number of message previews in list/preview (default: 5)
   --help, -h             Show this help
   --version, -v          Show version
 
 Examples:
-  # List all sessions with previews
-  session-converter list
-
-  # Convert specific Codex session to Claude Code
-  session-converter codex2claude 019ced67-e597-72d2-9e6d-657e520103b0
-
-  # Auto-detect and convert a file
-  session-converter auto /path/to/session.jsonl
-
-  # Convert with custom output path
-  session-converter codex2claude 019ced67 -o ~/my-converted-session.jsonl
-
-  # Get JSON result (for AI agents)
-  session-converter auto 019ced67 --json
-
-  # Preview session content before converting
-  session-converter preview 019ced67
+  ${NAME} list                                              # Show all sessions
+  ${NAME} preview 019ced67                                  # Preview a Codex session
+  ${NAME} codex2claude 019ced67-e597-72d2-9e6d-657e520103b0 # Bridge Codex -> Claude Code
+  ${NAME} auto /path/to/session.jsonl -o ~/bridged.jsonl    # Auto-detect and convert
+  ${NAME} auto 019ced67 --json                              # JSON output for AI agents
 `;
 
 function main(): void {
@@ -77,7 +66,7 @@ function main(): void {
   }
 
   if (args.includes("--version") || args.includes("-v")) {
-    console.log(VERSION);
+    console.log(`${NAME} v${VERSION}`);
     process.exit(0);
   }
 
@@ -92,7 +81,7 @@ function main(): void {
 
   switch (command) {
     case "list":
-      cmdList(target as "codex" | "claude" | undefined, jsonMode, previewLines);
+      cmdList(target as "codex" | "claude" | undefined, jsonMode);
       break;
     case "info":
       cmdInfo(target, jsonMode);
@@ -110,17 +99,16 @@ function main(): void {
       cmdConvert(target, "auto", outputPath, jsonMode, dryRun);
       break;
     default:
-      console.error(`Unknown command: ${command}`);
-      console.log(HELP);
+      console.error(`Unknown command: ${command}\nRun '${NAME} --help' for usage.`);
       process.exit(1);
   }
 }
 
 // ============================================================
-// list — sessions with preview
+// list
 // ============================================================
 
-function cmdList(filter: "codex" | "claude" | undefined, jsonMode: boolean, _previewLines: number): void {
+function cmdList(filter: "codex" | "claude" | undefined, jsonMode: boolean): void {
   const results: Record<string, unknown[]> = {};
 
   if (!filter || filter === "codex") {
@@ -145,46 +133,68 @@ function cmdList(filter: "codex" | "claude" | undefined, jsonMode: boolean, _pre
   }
 
   if (results.codex) {
-    console.log("\n\x1b[1m\x1b[34m=== Codex CLI Sessions ===\x1b[0m");
-    console.log(`  \x1b[2mLocation: ${codexSessionsDir()}\x1b[0m\n`);
-    for (const s of results.codex as any[]) {
-      const sizeKb = (s.size / 1024).toFixed(0);
-      console.log(`  \x1b[1m${s.id}\x1b[0m`);
-      console.log(`    \x1b[2mDate:\x1b[0m ${s.date}  \x1b[2mSize:\x1b[0m ${sizeKb}KB`);
-      console.log(`    \x1b[2mFile:\x1b[0m ${s.file}`);
-      if (s.preview?.length > 0) {
-        for (const p of s.preview) {
-          const truncated = p.text.length > 100 ? p.text.slice(0, 100) + "..." : p.text;
-          const roleColor = p.role === "user" ? "\x1b[32m" : "\x1b[33m";
-          console.log(`    ${roleColor}${p.role}:\x1b[0m ${truncated}`);
-        }
+    const items = results.codex as any[];
+    const originals = items.filter((s) => !s.converted);
+    const converted = items.filter((s) => s.converted);
+
+    console.log(`\n\x1b[1m\x1b[34m  Codex CLI Sessions\x1b[0m  \x1b[2m(${codexSessionsDir()})\x1b[0m\n`);
+    for (const s of originals) {
+      printSessionEntry(s, "codex");
+    }
+    if (converted.length > 0) {
+      console.log(`  \x1b[2m--- bridged from Claude Code ---\x1b[0m\n`);
+      for (const s of converted) {
+        printSessionEntry(s, "codex", true);
       }
-      console.log();
+    }
+    if (items.length === 0) {
+      console.log("  \x1b[2mNo sessions found.\x1b[0m\n");
     }
   }
 
   if (results.claude) {
-    console.log("\n\x1b[1m\x1b[35m=== Claude Code Sessions ===\x1b[0m");
-    console.log(`  \x1b[2mLocation: ${claudeProjectsDir()}\x1b[0m\n`);
-    for (const s of results.claude as any[]) {
-      const sizeKb = (s.size / 1024).toFixed(0);
-      console.log(`  \x1b[1m${s.id}\x1b[0m`);
-      console.log(`    \x1b[2mProject:\x1b[0m ${s.project}  \x1b[2mSize:\x1b[0m ${sizeKb}KB`);
-      console.log(`    \x1b[2mFile:\x1b[0m ${s.file}`);
-      if (s.preview?.length > 0) {
-        for (const p of s.preview) {
-          const truncated = p.text.length > 100 ? p.text.slice(0, 100) + "..." : p.text;
-          const roleColor = p.role === "user" ? "\x1b[32m" : "\x1b[33m";
-          console.log(`    ${roleColor}${p.role}:\x1b[0m ${truncated}`);
-        }
+    const items = results.claude as any[];
+    const originals = items.filter((s) => !s.converted);
+    const converted = items.filter((s) => s.converted);
+
+    console.log(`\n\x1b[1m\x1b[35m  Claude Code Sessions\x1b[0m  \x1b[2m(${claudeProjectsDir()})\x1b[0m\n`);
+    for (const s of originals) {
+      printSessionEntry(s, "claude");
+    }
+    if (converted.length > 0) {
+      console.log(`  \x1b[2m--- bridged from Codex ---\x1b[0m\n`);
+      for (const s of converted) {
+        printSessionEntry(s, "claude", true);
       }
-      console.log();
+    }
+    if (items.length === 0) {
+      console.log("  \x1b[2mNo sessions found.\x1b[0m\n");
     }
   }
 }
 
+function printSessionEntry(s: any, type: "codex" | "claude", converted = false): void {
+  const sizeKb = (s.size / 1024).toFixed(0);
+  const badge = converted ? " \x1b[36m[bridged]\x1b[0m" : "";
+  console.log(`  \x1b[1m${s.id}\x1b[0m${badge}`);
+  if (type === "codex") {
+    console.log(`    \x1b[2mDate:\x1b[0m ${s.date}  \x1b[2mSize:\x1b[0m ${sizeKb} KB`);
+  } else {
+    console.log(`    \x1b[2mProject:\x1b[0m ${s.project}  \x1b[2mSize:\x1b[0m ${sizeKb} KB`);
+  }
+  console.log(`    \x1b[2mFile:\x1b[0m ${s.file}`);
+  if (s.preview?.length > 0) {
+    for (const p of s.preview) {
+      const truncated = p.text.length > 100 ? p.text.slice(0, 100) + "..." : p.text;
+      const roleColor = p.role === "user" ? "\x1b[32m" : "\x1b[33m";
+      console.log(`    ${roleColor}${p.role}:\x1b[0m ${truncated}`);
+    }
+  }
+  console.log();
+}
+
 // ============================================================
-// preview — detailed session preview
+// preview
 // ============================================================
 
 function cmdPreview(target: string, jsonMode: boolean, limit: number): void {
@@ -196,7 +206,7 @@ function cmdPreview(target: string, jsonMode: boolean, limit: number): void {
     return;
   }
 
-  console.log(`\n\x1b[1mSession Preview\x1b[0m`);
+  console.log(`\n\x1b[1m  Session Preview\x1b[0m`);
   console.log(`  \x1b[2mFile:\x1b[0m ${filePath}`);
   console.log(`  \x1b[2mFormat:\x1b[0m ${format}\n`);
 
@@ -223,7 +233,7 @@ function cmdPreview(target: string, jsonMode: boolean, limit: number): void {
 }
 
 // ============================================================
-// info — session metadata
+// info
 // ============================================================
 
 function cmdInfo(target: string, jsonMode: boolean): void {
@@ -235,7 +245,6 @@ function cmdInfo(target: string, jsonMode: boolean): void {
     file: filePath,
     format,
     totalLines: lines.length,
-    sizeBytes: Buffer.byteLength(content),
     sizeKB: (Buffer.byteLength(content) / 1024).toFixed(1),
   };
 
@@ -278,7 +287,7 @@ function cmdInfo(target: string, jsonMode: boolean): void {
   if (jsonMode) {
     console.log(JSON.stringify(info, null, 2));
   } else {
-    console.log("\n\x1b[1m=== Session Info ===\x1b[0m");
+    console.log("\n\x1b[1m  Session Info\x1b[0m\n");
     for (const [k, v] of Object.entries(info)) {
       if (typeof v === "object" && v !== null) {
         console.log(`  \x1b[2m${k}:\x1b[0m`);
@@ -314,7 +323,7 @@ function cmdConvert(
     } else if (format === "claude") {
       actualDirection = "claude2codex";
     } else {
-      console.error("Cannot auto-detect format. Please specify codex2claude or claude2codex.");
+      console.error("Cannot auto-detect format. Specify codex2claude or claude2codex explicitly.");
       process.exit(1);
     }
   } else {
@@ -342,7 +351,7 @@ function cmdConvert(
     if (jsonMode) {
       console.log(JSON.stringify(summary, null, 2));
     } else {
-      console.log("\n\x1b[1m=== Dry Run ===\x1b[0m");
+      console.log("\n\x1b[1m  Dry Run\x1b[0m\n");
       for (const [k, v] of Object.entries(summary)) {
         console.log(`  \x1b[2m${k}:\x1b[0m ${Array.isArray(v) ? v.join(", ") : v}`);
       }
@@ -369,17 +378,17 @@ function cmdConvert(
   if (jsonMode) {
     console.log(JSON.stringify(report, null, 2));
   } else {
-    console.log(`\n\x1b[32m\x1b[1m+++ Converted ${actualDirection}\x1b[0m`);
-    console.log(`  \x1b[2mSource:\x1b[0m    ${filePath}`);
-    console.log(`  \x1b[2mOutput:\x1b[0m    ${finalOutput}`);
-    console.log(`  \x1b[2mRecords:\x1b[0m   ${result.meta.stats.totalRecords} total -> ${result.meta.stats.convertedRecords} converted, ${result.meta.stats.skippedRecords} skipped`);
-    console.log(`  \x1b[2mMessages:\x1b[0m  ${result.meta.stats.userMessages} user, ${result.meta.stats.assistantMessages} assistant`);
+    const arrow = actualDirection === "codex2claude" ? "Codex -> Claude Code" : "Claude Code -> Codex";
+    console.log(`\n\x1b[32m\x1b[1m  Bridged: ${arrow}\x1b[0m\n`);
+    console.log(`  \x1b[2mSource:\x1b[0m     ${filePath}`);
+    console.log(`  \x1b[2mOutput:\x1b[0m     ${finalOutput}`);
+    console.log(`  \x1b[2mRecords:\x1b[0m    ${result.meta.stats.totalRecords} total -> ${result.meta.stats.convertedRecords} converted, ${result.meta.stats.skippedRecords} skipped`);
+    console.log(`  \x1b[2mMessages:\x1b[0m   ${result.meta.stats.userMessages} user, ${result.meta.stats.assistantMessages} assistant`);
     console.log(`  \x1b[2mTool calls:\x1b[0m ${result.meta.stats.toolCalls}`);
     if (result.meta.lossyFields.length > 0) {
-      console.log(`  \x1b[2mLossy:\x1b[0m     ${result.meta.lossyFields.join(", ")}`);
+      console.log(`  \x1b[2mLossy:\x1b[0m      ${result.meta.lossyFields.join(", ")}`);
     }
-    console.log(`\n  \x1b[1mTo resume:\x1b[0m ${report.resumeHint}`);
-    console.log();
+    console.log(`\n  \x1b[1mResume:\x1b[0m ${report.resumeHint}\n`);
   }
 }
 
@@ -414,12 +423,9 @@ function getSessionPreview(filePath: string, format: string, limit: number): Mes
               .join("\n")
               .trim();
             if (!text) continue;
-            if (text.startsWith("<permissions") || text.startsWith("# AGENTS.md")) continue;
-            previews.push({
-              role: p.role,
-              text,
-              timestamp: rec.timestamp,
-            });
+            // Skip system/developer messages
+            if (text.startsWith("<permissions") || text.startsWith("# AGENTS.md") || text.startsWith("[SYSTEM/DEVELOPER]")) continue;
+            previews.push({ role: p.role, text, timestamp: rec.timestamp });
           }
         } catch { /* skip */ }
       }
@@ -429,16 +435,16 @@ function getSessionPreview(filePath: string, format: string, limit: number): Mes
         try {
           const rec = JSON.parse(line);
           if (rec.type === "user") {
-            const content = rec.message?.content;
-            const text = typeof content === "string"
-              ? content
-              : (content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("\n");
+            const msgContent = rec.message?.content;
+            const text = typeof msgContent === "string"
+              ? msgContent
+              : (msgContent || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("\n");
             if (!text.trim()) continue;
             previews.push({ role: "user", text: text.trim(), timestamp: rec.timestamp });
           } else if (rec.type === "assistant") {
-            const content = rec.message?.content || [];
-            const texts = content.filter((c: any) => c.type === "text").map((c: any) => c.text);
-            const tools = content.filter((c: any) => c.type === "tool_use").map((c: any) => `${c.name}()`);
+            const msgContent = rec.message?.content || [];
+            const texts = msgContent.filter((c: any) => c.type === "text").map((c: any) => c.text);
+            const tools = msgContent.filter((c: any) => c.type === "tool_use").map((c: any) => `${c.name}()`);
             const text = texts.join("\n").trim();
             if (!text && tools.length === 0) continue;
             previews.push({
@@ -462,33 +468,45 @@ function getSessionPreview(filePath: string, format: string, limit: number): Mes
 
 function resolveTarget(target: string): { filePath: string; format: "codex" | "claude" | "unknown" } {
   if (!target) {
-    console.error("Please provide a session ID or file path.");
+    console.error(`No session specified. Run '${NAME} list' to see available sessions.`);
     process.exit(1);
   }
 
+  // Direct file path
   if (existsSync(target)) {
     const firstLine = readFileSync(target, "utf-8").split("\n")[0];
     return { filePath: resolve(target), format: detectFormat(firstLine) };
   }
 
-  const codexFile = findCodexSession(target);
-  if (codexFile) return { filePath: codexFile, format: "codex" };
+  // Unified search: list all sessions, match by full or partial ID, prefer originals
+  const allCodex = listCodexSessions(500);
+  const allClaude = listClaudeSessions(500);
 
-  const claudeFile = findClaudeSession(target);
-  if (claudeFile) return { filePath: claudeFile, format: "claude" };
+  // Phase 1: Exact full ID match — originals first
+  const codexExact = allCodex.find((s) => s.id === target && !s.converted);
+  if (codexExact) return { filePath: codexExact.file, format: "codex" };
 
+  const claudeExact = allClaude.find((s) => s.id === target && !s.converted);
+  if (claudeExact) return { filePath: claudeExact.file, format: "claude" };
+
+  // Phase 2: Partial ID match (8+ chars) — originals first
   if (target.length >= 8) {
-    const claudeSessions = listClaudeSessions(200);
-    const match = claudeSessions.find((s) => s.id.startsWith(target));
-    if (match) return { filePath: match.file, format: "claude" };
+    const claudePartial = allClaude.find((s) => s.id.startsWith(target) && !s.converted);
+    if (claudePartial) return { filePath: claudePartial.file, format: "claude" };
 
-    const codexSessions = listCodexSessions(200);
-    const codexMatch = codexSessions.find((s) => s.id.startsWith(target));
-    if (codexMatch) return { filePath: codexMatch.file, format: "codex" };
+    const codexPartial = allCodex.find((s) => s.id.startsWith(target) && !s.converted);
+    if (codexPartial) return { filePath: codexPartial.file, format: "codex" };
   }
 
+  // Phase 3: Fall back to converted sessions
+  const codexConverted = allCodex.find((s) => (s.id === target || (target.length >= 8 && s.id.startsWith(target))) && s.converted);
+  if (codexConverted) return { filePath: codexConverted.file, format: "codex" };
+
+  const claudeConverted = allClaude.find((s) => (s.id === target || (target.length >= 8 && s.id.startsWith(target))) && s.converted);
+  if (claudeConverted) return { filePath: claudeConverted.file, format: "claude" };
+
   console.error(`Session not found: ${target}`);
-  console.error("Provide a full session ID, partial ID (8+ chars), or file path.");
+  console.error(`Run '${NAME} list' to see available sessions.`);
   process.exit(1);
 }
 

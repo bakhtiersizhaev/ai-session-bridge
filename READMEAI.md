@@ -1,73 +1,59 @@
-# session-converter — AI Agent Guide
+# ai-session-bridge — AI Agent Integration Guide
 
-## Purpose
+## What this tool does
 
-This tool converts AI coding session files between OpenAI Codex CLI and Anthropic Claude Code CLI JSONL formats. Both tools store sessions as JSONL (one JSON object per line), but with different schemas.
+Converts AI coding session JSONL files between OpenAI Codex CLI and Anthropic Claude Code CLI formats. Both CLI tools store sessions as JSONL (one JSON object per line) but with different schemas. This tool maps between them bidirectionally.
 
-## For AI Agents: How to Use
+## How to use (for AI agents)
 
-### Installation
-
-```bash
-cd /path/to/session-converter
-npm install  # or: skip if tsx is available globally
-```
-
-### Quick Reference
-
-All commands support `--json` flag for machine-readable output.
+All commands support `--json` for machine-readable output.
 
 ```bash
-# List all available sessions (returns JSON with session IDs, paths, sizes, previews)
+# List all available sessions
 npx tsx src/cli.ts list --json
 
 # Get info about a specific session
 npx tsx src/cli.ts info <session-id-or-path> --json
 
-# Preview messages from a session
+# Preview messages
 npx tsx src/cli.ts preview <session-id> --json
 
 # Convert (auto-detect direction)
 npx tsx src/cli.ts auto <session-id> --json
 
-# Convert with explicit direction
+# Explicit direction
 npx tsx src/cli.ts codex2claude <session-id> --json
 npx tsx src/cli.ts claude2codex <session-id> --json
 
-# Dry run (no file written)
+# Dry run
 npx tsx src/cli.ts auto <session-id> --json --dry-run
 ```
 
-### JSON Output Schema
+## JSON output schemas
 
-#### `list --json`
+### `list --json`
 ```json
 {
-  "codex": [
-    {
-      "id": "UUID",
-      "file": "/absolute/path/to/session.jsonl",
-      "date": "YYYY-MM-DD",
-      "size": 12345,
-      "preview": [
-        { "role": "user", "text": "first message", "timestamp": "ISO8601" },
-        { "role": "assistant", "text": "response", "timestamp": "ISO8601" }
-      ]
-    }
-  ],
-  "claude": [
-    {
-      "id": "UUID",
-      "file": "/absolute/path/to/session.jsonl",
-      "project": "/project/path",
-      "size": 12345,
-      "preview": [...]
-    }
-  ]
+  "codex": [{
+    "id": "UUID",
+    "file": "/absolute/path.jsonl",
+    "date": "YYYY-MM-DD",
+    "size": 12345,
+    "converted": false,
+    "preview": [{"role": "user", "text": "...", "timestamp": "ISO8601"}]
+  }],
+  "claude": [{
+    "id": "UUID",
+    "file": "/absolute/path.jsonl",
+    "project": "/project/path",
+    "size": 12345,
+    "converted": false,
+    "preview": [...]
+  }]
 }
 ```
 
-#### `auto --json` (conversion result)
+### `auto --json` (conversion result)
 ```json
 {
   "success": true,
@@ -80,40 +66,42 @@ npx tsx src/cli.ts auto <session-id> --json --dry-run
   "toolCalls": 1009,
   "userMessages": 221,
   "assistantMessages": 137,
-  "lossyFields": ["session_meta.base_instructions", "developer_role_as_user_prefix"],
+  "lossyFields": ["session_meta.base_instructions"],
   "resumeHint": "claude --resume UUID"
 }
 ```
 
-### Session ID Resolution
+## Session ID resolution
 
-The tool accepts:
+Accepts:
 - Full UUID: `019ced67-e597-72d2-9e6d-657e520103b0`
 - Partial UUID (8+ chars): `019ced67`
-- Full file path: `/home/user/.codex/sessions/2026/03/14/rollout-....jsonl`
+- File path: `/home/user/.codex/sessions/2026/03/14/rollout-....jsonl`
 
-### Session File Locations
+Originals are prioritized over converted sessions when resolving.
 
-- **Codex CLI**: `~/.codex/sessions/YYYY/MM/DD/rollout-DATETIME-UUID.jsonl`
-- **Claude Code**: `~/.claude/projects/-{PATH_WITH_DASHES}/UUID.jsonl`
+## Session file locations
 
-### Format Mapping
+- **Codex CLI originals**: `~/.codex/sessions/YYYY/MM/DD/rollout-DATETIME-UUID.jsonl`
+- **Claude Code originals**: `~/.claude/projects/-{PATH}/UUID.jsonl`
+- **Bridged Codex->Claude**: `~/.claude/projects/-converted-from-codex/UUID.jsonl`
+- **Bridged Claude->Codex**: `~/.codex/sessions/YYYY/MM/DD/converted-DATETIME-UUID.jsonl`
+
+## Format mapping reference
 
 | Codex (OpenAI Responses API) | Claude Code (Anthropic Messages API) |
 |------------------------------|--------------------------------------|
 | `{timestamp, type, payload}` wrapper | `{type, sessionId, uuid, timestamp, ...}` wrapper |
-| `response_item.payload.type: "message"` | `type: "user"` or `type: "assistant"` |
-| `payload.role: "user"`, content: `input_text` | `message.role: "user"`, content: string or `text[]` |
-| `payload.role: "assistant"`, content: `output_text` | `message.role: "assistant"`, content: `text[]` |
-| `payload.type: "function_call"` | content item `type: "tool_use"` |
-| `payload.type: "function_call_output"` | content item `type: "tool_result"` |
-| `session_meta` (first record) | metadata embedded in each record |
+| `response_item` role=user, content: `input_text` | `type: "user"`, content: string or `text[]` |
+| `response_item` role=assistant, content: `output_text` | `type: "assistant"`, content: `text[]` |
+| `function_call` (name, arguments, call_id) | `tool_use` (id, name, input) |
+| `function_call_output` (call_id, output) | `tool_result` (tool_use_id, content) |
+| `session_meta` | metadata embedded in each record |
 | `turn_context` | no equivalent (lossy) |
 | `event_msg` | `type: "progress"` |
-| `compacted` | no equivalent (expanded from replacement_history) |
-| N/A | `type: "file-history-snapshot"` (lossy) |
+| `compacted` | expanded from replacement_history |
 
-### Tool Name Mapping
+## Tool name mapping
 
 | Codex | Claude Code |
 |-------|-------------|
@@ -125,23 +113,19 @@ The tool accepts:
 | `search_files` | `Grep` |
 | `request_user_input` | `AskUserQuestion` |
 
-### Error Handling
-
-- Non-zero exit code on errors
-- Error messages on stderr
-- JSON output includes `success: false` on failure (where applicable)
-
-### Integration Example (from AI agent)
+## Integration example
 
 ```bash
-# Step 1: Find the Codex session
-RESULT=$(npx tsx /path/to/session-converter/src/cli.ts list codex --json)
-# Parse RESULT to find session ID
+# 1. Find sessions
+SESSIONS=$(npx tsx /path/to/ai-session-bridge/src/cli.ts list codex --json)
 
-# Step 2: Convert it
-npx tsx /path/to/session-converter/src/cli.ts codex2claude <session-id> --json
-# Parse output for outputFile path
+# 2. Convert
+RESULT=$(npx tsx /path/to/ai-session-bridge/src/cli.ts codex2claude $SESSION_ID --json)
 
-# Step 3: Resume in Claude Code
-claude --resume <session-id>
+# 3. Resume
+claude --resume $SESSION_ID
 ```
+
+## Requirements
+
+Node.js 18+, tsx

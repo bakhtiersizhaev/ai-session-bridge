@@ -1,8 +1,8 @@
-# session-converter
+# ai-session-bridge
 
-Bidirectional session converter between **OpenAI Codex CLI** and **Anthropic Claude Code CLI**.
+Bridge your AI coding sessions between **OpenAI Codex CLI** and **Anthropic Claude Code CLI**.
 
-Convert your AI coding sessions between tools and continue where you left off.
+Start a task in one tool, continue in the other. Both store sessions as JSONL — this tool converts between their formats bidirectionally.
 
 ---
 
@@ -12,196 +12,160 @@ Convert your AI coding sessions between tools and continue where you left off.
 
 ## English
 
-### What is this?
+### The problem
 
-Both Codex CLI and Claude Code CLI store conversation sessions as JSONL files. This tool converts sessions between the two formats, letting you:
+You're deep into a coding session with Codex CLI when you realize Claude Code would handle the next part better. Or vice versa. But your conversation history, tool call results, and context are locked in one tool's proprietary JSONL format.
 
-- Start a task in Codex, continue it in Claude Code (or vice versa)
-- Migrate session history across tools
-- Preview and inspect sessions from both tools in one place
+### The solution
+
+`ai-session-bridge` reads session files from either tool, maps messages and tool calls 1:1, and writes a valid session file for the other tool. Then you resume where you left off.
 
 ### How it works
 
-| Codex CLI (OpenAI) | | Claude Code (Anthropic) |
-|---|---|---|
-| `response_item` role=user | <-> | `type: "user"` |
-| `response_item` role=assistant | <-> | `type: "assistant"` |
-| `function_call` + `function_call_output` | <-> | `tool_use` + `tool_result` |
-| `session_meta` | -> | session metadata in records |
-| `turn_context` | -> | (metadata, lossy) |
-| `event_msg` | <-> | `type: "progress"` |
-| `compacted` | -> | expanded as user/assistant messages |
-
-### Installation
-
-```bash
-# Clone the repository
-git clone https://github.com/YOUR_USERNAME/session-converter.git
-cd session-converter
-
-# Install dependencies
-npm install
-
-# Run directly
-npx tsx src/cli.ts --help
+```
+Codex CLI (.codex/sessions/)          Claude Code (.claude/projects/)
+┌──────────────────────┐              ┌──────────────────────┐
+│ response_item (user) │  ──bridge──> │ type: "user"         │
+│ response_item (asst) │  ──bridge──> │ type: "assistant"    │
+│ function_call        │  ──bridge──> │ tool_use             │
+│ function_call_output │  ──bridge──> │ tool_result          │
+│ session_meta         │  ──bridge──> │ (embedded metadata)  │
+│ event_msg            │  <──bridge── │ type: "progress"     │
+└──────────────────────┘              └──────────────────────┘
 ```
 
-**Requirements:** Node.js 18+ and `tsx` (included in devDependencies).
+### Quick start
+
+```bash
+git clone https://github.com/bakhtiersizhaev/ai-session-bridge.git
+cd ai-session-bridge
+npm install
+```
 
 ### Usage
 
-#### List all sessions
-
 ```bash
-npx tsx src/cli.ts list              # Both Codex and Claude Code sessions
-npx tsx src/cli.ts list codex        # Only Codex sessions
-npx tsx src/cli.ts list claude       # Only Claude Code sessions
-```
+# See all your sessions from both tools
+npx tsx src/cli.ts list
 
-Shows session ID, path, size, and first messages preview.
+# Preview what's in a session before bridging
+npx tsx src/cli.ts preview 019ced67
 
-#### Preview a session
+# Bridge Codex session -> Claude Code
+npx tsx src/cli.ts codex2claude 019ced67-e597-72d2-9e6d-657e520103b0
 
-```bash
-npx tsx src/cli.ts preview <session-id>
-npx tsx src/cli.ts preview 019ced67    # Partial ID works (8+ chars)
-```
+# Bridge Claude Code session -> Codex
+npx tsx src/cli.ts claude2codex 70f732ba-5279-4674-a7a8-c99cc4771e33
 
-#### Get session info
+# Auto-detect format and bridge
+npx tsx src/cli.ts auto /path/to/session.jsonl
 
-```bash
-npx tsx src/cli.ts info <session-id>
-```
+# Dry run — see stats without writing
+npx tsx src/cli.ts auto 019ced67 --dry-run
 
-#### Convert sessions
-
-```bash
-# Codex -> Claude Code
-npx tsx src/cli.ts codex2claude <session-id>
-
-# Claude Code -> Codex
-npx tsx src/cli.ts claude2codex <session-id>
-
-# Auto-detect and convert
-npx tsx src/cli.ts auto <session-id-or-file>
-
-# Custom output path
-npx tsx src/cli.ts auto <session-id> -o ~/my-session.jsonl
-
-# Dry run (see what would happen)
-npx tsx src/cli.ts auto <session-id> --dry-run
-```
-
-#### JSON mode (for AI agents)
-
-```bash
+# JSON output for AI agents
 npx tsx src/cli.ts list --json
-npx tsx src/cli.ts auto <session-id> --json
 ```
 
-All commands support `--json` for machine-readable output.
+### Features
 
-### Session storage locations
+- **Bidirectional**: Codex CLI <-> Claude Code, both directions
+- **Auto-detect**: Reads the JSONL and figures out which format it is
+- **Session discovery**: Finds sessions in `~/.codex/sessions/` and `~/.claude/projects/` automatically
+- **Partial ID**: Type 8+ characters of a session UUID instead of the full thing
+- **Message preview**: See the first messages before converting
+- **Tool name mapping**: `exec_command` <-> `Bash`, `read_file` <-> `Read`, etc.
+- **Converted session tracking**: Bridged sessions are marked `[bridged]` in list output
+- **AI agent friendly**: `--json` flag on every command for machine-readable output
 
-| Tool | Location |
-|------|----------|
+### Tool name mapping
+
+| Codex CLI | Claude Code |
+|-----------|-------------|
+| `exec_command` | `Bash` |
+| `read_file` | `Read` |
+| `write_file` | `Write` |
+| `patch_file` | `Edit` |
+| `list_directory` | `Glob` |
+| `search_files` | `Grep` |
+| `request_user_input` | `AskUserQuestion` |
+
+### Session storage paths
+
+| Tool | Path |
+|------|------|
 | Codex CLI | `~/.codex/sessions/YYYY/MM/DD/*.jsonl` |
 | Claude Code | `~/.claude/projects/-{PROJECT_PATH}/*.jsonl` |
+| Bridged (Codex->Claude) | `~/.claude/projects/-converted-from-codex/*.jsonl` |
+| Bridged (Claude->Codex) | `~/.codex/sessions/YYYY/MM/DD/converted-*.jsonl` |
 
-### Limitations
+### What's preserved / what's lost
 
-Some fields don't have direct equivalents and are marked as "lossy":
-- `session_meta.base_instructions` — Codex system prompt (not present in Claude Code format)
-- `developer` role messages — converted with `[SYSTEM/DEVELOPER]` prefix
-- `turn_context.collaboration_mode` — Codex-specific metadata
-- `file-history-snapshot` — Claude Code-specific file backup tracking
-- `compacted` summaries — expanded from replacement_history, original summary text lost
+| Field | Status |
+|-------|--------|
+| User messages | 1:1 |
+| Assistant messages | 1:1 |
+| Tool calls + results | 1:1 (with name mapping) |
+| Progress events | mapped |
+| `developer` role (Codex) | converted with `[SYSTEM/DEVELOPER]` prefix |
+| `session_meta` (Codex) | embedded in session metadata |
+| `turn_context` (Codex) | lossy — no Claude Code equivalent |
+| `file-history-snapshot` (Claude) | lossy — no Codex equivalent |
+| `compacted` summaries (Codex) | expanded from `replacement_history` |
 
-### Project structure
+### Requirements
 
-```
-session-converter/
-├── src/
-│   ├── cli.ts            # CLI entry point with all commands
-│   ├── codex2claude.ts   # Codex -> Claude Code conversion
-│   ├── claude2codex.ts   # Claude Code -> Codex conversion
-│   ├── discover.ts       # Session file discovery and format detection
-│   └── types.ts          # TypeScript type definitions for both formats
-├── package.json
-├── tsconfig.json
-├── READMEAI.md           # Instructions for AI agents
-├── AGENTS.txt            # AI agent discovery file
-├── LICENSE               # MIT
-└── README.md             # This file
-```
+- Node.js 18+
+- `tsx` (installed as devDependency)
 
 ---
 
 ## Русский
 
-### Что это?
+### Проблема
 
-И Codex CLI, и Claude Code CLI хранят сессии разговоров в формате JSONL. Этот инструмент конвертирует сессии между двумя форматами, позволяя:
+Вы в разгаре сессии в Codex CLI и понимаете, что Claude Code лучше справится со следующей частью задачи. Или наоборот. Но вся история диалога, результаты вызовов инструментов и контекст заперты в проприетарном JSONL-формате одного инструмента.
 
-- Начать задачу в Codex, продолжить в Claude Code (и наоборот)
-- Перенести историю сессий между инструментами
-- Просматривать и инспектировать сессии из обоих инструментов в одном месте
+### Решение
 
-### Как работает
+`ai-session-bridge` читает файл сессии любого из инструментов, маппит сообщения и tool calls 1:1, и записывает валидный файл сессии для другого. Дальше вы продолжаете с того места, где остановились.
 
-Оба CLI хранят сессии как JSONL (JSON Lines). Конвертер читает записи одного формата и маппит их в другой:
-
-- Текстовые сообщения user/assistant — маппятся 1:1
-- Tool calls (function_call <-> tool_use) — маппятся 1:1 с переименованием инструментов
-- Метаданные (session_meta, turn_context, file-history) — частично, помечаются как lossy
-
-### Установка
+### Быстрый старт
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/session-converter.git
-cd session-converter
+git clone https://github.com/bakhtiersizhaev/ai-session-bridge.git
+cd ai-session-bridge
 npm install
-npx tsx src/cli.ts --help
 ```
-
-**Требования:** Node.js 18+ и `tsx`.
 
 ### Использование
 
 ```bash
-# Список всех сессий с превью
+# Все сессии из обоих инструментов
 npx tsx src/cli.ts list
 
-# Превью содержимого сессии
+# Превью сессии перед конвертацией
 npx tsx src/cli.ts preview 019ced67
 
-# Конвертация Codex -> Claude Code
+# Codex -> Claude Code
 npx tsx src/cli.ts codex2claude 019ced67-e597-72d2-9e6d-657e520103b0
 
-# Конвертация Claude Code -> Codex
+# Claude Code -> Codex
 npx tsx src/cli.ts claude2codex 70f732ba-5279-4674-a7a8-c99cc4771e33
 
 # Авто-определение формата
 npx tsx src/cli.ts auto /path/to/session.jsonl
 
-# JSON вывод (для AI агентов)
-npx tsx src/cli.ts list --json
+# Пробный прогон (без записи файла)
+npx tsx src/cli.ts auto 019ced67 --dry-run
 ```
 
-### Где хранятся сессии
+### Что сохраняется при конвертации
 
-| Инструмент | Расположение |
-|------------|-------------|
-| Codex CLI | `~/.codex/sessions/YYYY/MM/DD/*.jsonl` |
-| Claude Code | `~/.claude/projects/-{ПУТЬ_К_ПРОЕКТУ}/*.jsonl` |
-
-### Ограничения
-
-Некоторые поля не имеют прямых аналогов и помечаются как "lossy":
-- `session_meta.base_instructions` — системный промпт Codex
-- `developer` роль — конвертируется с префиксом `[SYSTEM/DEVELOPER]`
-- `turn_context.collaboration_mode` — специфичные метаданные Codex
-- `file-history-snapshot` — специфичное отслеживание файлов Claude Code
+- Текстовые сообщения user/assistant — 1:1
+- Tool calls и результаты — 1:1 с переименованием инструментов
+- Progress events — маппятся
+- Метаданные (session_meta, turn_context, file-history) — частично, помечаются как lossy
 
 ---
 

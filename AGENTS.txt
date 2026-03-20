@@ -1,51 +1,51 @@
-SESSION-CONVERTER — AI CODING SESSION FORMAT CONVERTER
-======================================================
+AI-SESSION-BRIDGE — Bridge AI coding sessions between Codex CLI and Claude Code
+=================================================================================
 
-PURPOSE: Converts session JSONL files between OpenAI Codex CLI and Anthropic Claude Code CLI formats.
-         Enables continuing a coding session started in one tool using the other.
+PURPOSE: Bidirectional JSONL session converter between OpenAI Codex CLI and
+         Anthropic Claude Code CLI. Enables continuing a coding session started
+         in one tool using the other.
 
-LOCATION: This is the session-converter project root directory.
-
-TOOL LOCATION: src/cli.ts (run with: npx tsx src/cli.ts)
-
-CAPABILITIES:
-- Bidirectional conversion: Codex CLI <-> Claude Code CLI
-- Auto-format detection from JSONL content
-- Session discovery: finds sessions in ~/.codex/sessions/ and ~/.claude/projects/
-- Session preview: shows first messages without converting
-- Partial session ID matching (8+ characters)
-- JSON output mode for programmatic use (--json flag)
-- Dry run mode (--dry-run flag)
-- Tool name mapping (exec_command <-> Bash, read_file <-> Read, etc.)
-- Full dump: messages, tool calls, tool results, progress events, metadata
+LOCATION: This is the ai-session-bridge project root directory.
+TOOL: src/cli.ts (run with: npx tsx src/cli.ts)
 
 COMMANDS:
-  list [codex|claude]           — List recent sessions with previews
-  info <id|file>                — Show session metadata and record counts
-  preview <id|file>             — Show first messages from session
-  codex2claude <id|file>        — Convert Codex -> Claude Code
-  claude2codex <id|file>        — Convert Claude Code -> Codex
-  auto <id|file>                — Auto-detect and convert
+  list [codex|claude]           — List recent sessions with message previews
+  info <id|file>                — Show session metadata and record type counts
+  preview <id|file>             — Show first messages from a session
+  codex2claude <id|file>        — Bridge Codex session -> Claude Code format
+  claude2codex <id|file>        — Bridge Claude Code session -> Codex format
+  auto <id|file>                — Auto-detect source format and bridge
 
 FLAGS:
-  --json         Machine-readable JSON output
+  --json         Machine-readable JSON output (all commands)
   --dry-run      Show conversion stats without writing
   --output/-o    Custom output file path
   --help/-h      Show help
 
 SESSION LOCATIONS:
-  Codex CLI:    ~/.codex/sessions/YYYY/MM/DD/rollout-DATETIME-UUID.jsonl
-  Claude Code:  ~/.claude/projects/-{PROJECT_PATH}/UUID.jsonl
+  Codex CLI originals:     ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl
+  Claude Code originals:   ~/.claude/projects/-{PROJECT_PATH}/*.jsonl
+  Bridged (Codex->Claude): ~/.claude/projects/-converted-from-codex/*.jsonl
+  Bridged (Claude->Codex): ~/.codex/sessions/YYYY/MM/DD/converted-*.jsonl
 
-CONVERTED OUTPUT LOCATIONS:
-  Codex->Claude: ~/.claude/projects/-converted-from-codex/UUID.jsonl
-  Claude->Codex: ~/.codex/sessions/YYYY/MM/DD/converted-DATETIME-UUID.jsonl
+SESSION ID RESOLUTION:
+  Accepts full UUID, partial UUID (8+ chars), or absolute file path.
+  Original sessions are prioritized over converted/bridged ones.
 
-KNOWN LOSSY FIELDS:
+TOOL NAME MAPPING:
+  exec_command <-> Bash
+  read_file    <-> Read
+  write_file   <-> Write
+  patch_file   <-> Edit
+  list_directory <-> Glob
+  search_files <-> Grep
+  request_user_input <-> AskUserQuestion
+
+LOSSY FIELDS:
   - session_meta.base_instructions (Codex system prompt)
   - developer role messages (prefixed with [SYSTEM/DEVELOPER])
   - turn_context.collaboration_mode (Codex-specific)
   - file-history-snapshot (Claude Code-specific)
   - compacted summaries (expanded from replacement_history)
 
-DEPENDENCIES: Node.js 18+, tsx
+REQUIREMENTS: Node.js 18+, tsx
