@@ -1,6 +1,6 @@
 {
   "name": "ai-session-bridge",
-  "version": "1.0.0",
+  "version": "0.1.0-preview",
   "description": "Bridge your AI coding sessions between OpenAI Codex CLI and Anthropic Claude Code CLI. Convert JSONL sessions bidirectionally and continue where you left off.",
   "type": "module",
   "bin": {

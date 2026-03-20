@@ -24,13 +24,14 @@ interface ConvertState {
   pendingTexts: Array<{ type: "text"; text: string }>;
   stats: ConversionMeta["stats"];
   lossyFields: Set<string>;
+  firstUserMessage: string;
 }
 
-export function convertCodexToClaude(lines: string[]): { records: string[]; meta: Omit<ConversionMeta, "sourceFile" | "outputPath"> } {
+export function convertCodexToClaude(lines: string[]): { records: string[]; meta: Omit<ConversionMeta, "sourceFile" | "outputPath">; sourceCwd: string; firstUserMessage: string } {
   const state: ConvertState = {
     sessionId: randomUUID(),
     cwd: process.cwd(),
-    version: "converted-from-codex",
+    version: "2.1.62",
     gitBranch: "",
     model: "unknown",
     lastUuid: null,
@@ -38,6 +39,7 @@ export function convertCodexToClaude(lines: string[]): { records: string[]; meta
     pendingTexts: [],
     stats: { totalRecords: 0, convertedRecords: 0, skippedRecords: 0, toolCalls: 0, userMessages: 0, assistantMessages: 0 },
     lossyFields: new Set(),
+    firstUserMessage: "",
   };
 
   const output: string[] = [];
@@ -130,9 +132,12 @@ export function convertCodexToClaude(lines: string[]): { records: string[]; meta
             } else if (msg.role === "assistant") {
               const text = msg.content.map((c) => c.text).join("\n");
               const uuid = randomUUID();
-              output.push(JSON.stringify(makeClaudeAssistant(state, [{ type: "text", text }], uuid, rec.timestamp)));
-              state.lastUuid = uuid;
-              state.stats.assistantMessages++;
+              const aRec = makeClaudeAssistant(state, [{ type: "text", text }], uuid, rec.timestamp);
+              if (aRec) {
+                output.push(JSON.stringify(aRec));
+                state.lastUuid = uuid;
+                state.stats.assistantMessages++;
+              }
               state.stats.convertedRecords++;
             }
           }
@@ -158,6 +163,9 @@ export function convertCodexToClaude(lines: string[]): { records: string[]; meta
             currentTurnTexts = [];
 
             const text = msg.content.map((c) => c.text).join("\n");
+            if (!state.firstUserMessage && text.trim()) {
+              state.firstUserMessage = text.trim();
+            }
             const uuid = randomUUID();
             output.push(JSON.stringify(makeClaudeUser(state, text, uuid, rec.timestamp)));
             state.lastUuid = uuid;
@@ -186,7 +194,7 @@ export function convertCodexToClaude(lines: string[]): { records: string[]; meta
           state.stats.convertedRecords++;
         } else if (ptype === "function_call_output") {
           const fo = payload as unknown as CodexFunctionCallOutputPayload;
-          pendingFunctionOutputs.set(fo.call_id, fo.output);
+          pendingFunctionOutputs.set(fo.call_id, normalizeToolOutput(fo.output));
           state.stats.convertedRecords++;
         }
         break;
@@ -210,6 +218,8 @@ export function convertCodexToClaude(lines: string[]): { records: string[]; meta
       lossyFields: [...state.lossyFields],
       stats: state.stats,
     },
+    sourceCwd: state.cwd,
+    firstUserMessage: state.firstUserMessage,
   };
 }
 
@@ -248,9 +258,12 @@ function flushAssistant(
 
   if (content.length > 0) {
     const uuid = randomUUID();
-    output.push(JSON.stringify(makeClaudeAssistant(state, content, uuid, timestamp)));
-    state.lastUuid = uuid;
-    state.stats.assistantMessages++;
+    const aRec = makeClaudeAssistant(state, content, uuid, timestamp);
+    if (aRec) {
+      output.push(JSON.stringify(aRec));
+      state.lastUuid = uuid;
+      state.stats.assistantMessages++;
+    }
   }
 
   // Add tool results as a separate assistant record (Claude Code convention)
@@ -301,6 +314,8 @@ function makeClaudeUser(state: ConvertState, text: string, uuid: string, timesta
     message: { role: "user", content: text },
     uuid,
     timestamp,
+    todos: [],
+    permissionMode: "default",
   };
 }
 
@@ -309,7 +324,13 @@ function makeClaudeAssistant(
   content: Array<Record<string, unknown>>,
   uuid: string,
   timestamp: string,
-): ClaudeAssistantRecord {
+): ClaudeAssistantRecord | null {
+  // Filter out empty text blocks — Claude API rejects them
+  const filtered = content.filter((item) => {
+    if (item.type === "text" && !(item.text as string)?.trim()) return false;
+    return true;
+  });
+  if (filtered.length === 0) return null;
   return {
     parentUuid: state.lastUuid,
     isSidechain: false,
@@ -324,7 +345,7 @@ function makeClaudeAssistant(
       id: `msg_converted_${uuid.slice(0, 8)}`,
       type: "message",
       role: "assistant",
-      content: content as any,
+      content: filtered as any,
       stop_reason: "end_turn",
       stop_sequence: null,
       usage: { input_tokens: 0, output_tokens: 0 },
@@ -348,6 +369,25 @@ function mapToolName(name: string, _direction: string): string {
     request_user_input: "AskUserQuestion",
   };
   return codex2claude[name] || name;
+}
+
+/**
+ * Normalize Codex tool output to Claude-compatible format.
+ * Codex uses "input_text"/"output_text" content types; Claude expects "text".
+ * Output can be a string or an array of content blocks.
+ */
+function normalizeToolOutput(output: string | Array<{ type: string; text: string }>): string {
+  if (typeof output === "string") return output;
+  if (Array.isArray(output)) {
+    return output
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (item.text) return item.text;
+        return JSON.stringify(item);
+      })
+      .join("\n");
+  }
+  return String(output);
 }
 
 function safeParse(line: string): CodexRecord | null {

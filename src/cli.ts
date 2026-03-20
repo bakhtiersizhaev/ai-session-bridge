@@ -11,8 +11,9 @@
  *   ai-session-bridge preview      <session-id-or-file>
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync } from "fs";
 import { dirname, join, resolve } from "path";
+import { homedir } from "os";
 import { convertCodexToClaude } from "./codex2claude.js";
 import { convertClaudeToCodex } from "./claude2codex.js";
 import {
@@ -26,7 +27,7 @@ import {
 } from "./discover.js";
 import type { ConversionMeta } from "./types.js";
 
-const VERSION = "1.0.0";
+const VERSION = "0.1.0-preview";
 const NAME = "ai-session-bridge";
 
 const HELP = `
@@ -45,6 +46,7 @@ Options:
   --output, -o <path>    Output file path (default: auto-generated)
   --json                 Machine-readable JSON output (for AI agents)
   --dry-run              Preview conversion stats without writing files
+  --tail <n>             Only convert last N user turns (useful for large sessions)
   --preview-lines <n>    Number of message previews in list/preview (default: 5)
   --help, -h             Show this help
   --version, -v          Show version
@@ -76,6 +78,8 @@ function main(): void {
   const dryRun = args.includes("--dry-run");
   const outputIdx = args.indexOf("--output") !== -1 ? args.indexOf("--output") : args.indexOf("-o");
   const outputPath = outputIdx !== -1 ? args[outputIdx + 1] : undefined;
+  const tailIdx = args.indexOf("--tail");
+  const tailTurns = tailIdx !== -1 ? parseInt(args[tailIdx + 1], 10) : undefined;
   const previewLinesIdx = args.indexOf("--preview-lines");
   const previewLines = previewLinesIdx !== -1 ? parseInt(args[previewLinesIdx + 1], 10) : 5;
 
@@ -90,13 +94,13 @@ function main(): void {
       cmdPreview(target, jsonMode, previewLines);
       break;
     case "codex2claude":
-      cmdConvert(target, "codex2claude", outputPath, jsonMode, dryRun);
+      cmdConvert(target, "codex2claude", outputPath, jsonMode, dryRun, tailTurns);
       break;
     case "claude2codex":
-      cmdConvert(target, "claude2codex", outputPath, jsonMode, dryRun);
+      cmdConvert(target, "claude2codex", outputPath, jsonMode, dryRun, tailTurns);
       break;
     case "auto":
-      cmdConvert(target, "auto", outputPath, jsonMode, dryRun);
+      cmdConvert(target, "auto", outputPath, jsonMode, dryRun, tailTurns);
       break;
     default:
       console.error(`Unknown command: ${command}\nRun '${NAME} --help' for usage.`);
@@ -312,9 +316,15 @@ function cmdConvert(
   outputPath: string | undefined,
   jsonMode: boolean,
   dryRun: boolean,
+  tailTurns?: number,
 ): void {
   const { filePath, format } = resolveTarget(target);
-  const lines = readFileSync(filePath, "utf-8").split("\n").filter(Boolean);
+  let lines = readFileSync(filePath, "utf-8").split("\n").filter(Boolean);
+
+  // --tail: keep only session_meta + last N user turns (with their surrounding context)
+  if (tailTurns && tailTurns > 0) {
+    lines = trimToTail(lines, tailTurns, format);
+  }
 
   let actualDirection: "codex2claude" | "claude2codex";
   if (direction === "auto") {
@@ -330,14 +340,14 @@ function cmdConvert(
     actualDirection = direction;
   }
 
-  let result: { records: string[]; meta: Omit<ConversionMeta, "sourceFile" | "outputPath"> };
+  let result: { records: string[]; meta: Omit<ConversionMeta, "sourceFile" | "outputPath">; sourceCwd?: string; firstUserMessage?: string };
   if (actualDirection === "codex2claude") {
     result = convertCodexToClaude(lines);
   } else {
     result = convertClaudeToCodex(lines);
   }
 
-  const finalOutput = outputPath || generateOutputPath(actualDirection, result.meta.sourceSessionId);
+  const finalOutput = outputPath || generateOutputPath(actualDirection, result.meta.sourceSessionId, result.sourceCwd);
 
   if (dryRun) {
     const summary = {
@@ -363,7 +373,13 @@ function cmdConvert(
   mkdirSync(dirname(finalOutput), { recursive: true });
   writeFileSync(finalOutput, result.records.join("\n") + "\n");
 
-  const report = {
+  // Register in Claude Code's history.jsonl so --resume can discover the session
+  if (actualDirection === "codex2claude") {
+    const projectPath = result.sourceCwd || process.cwd();
+    registerInClaudeHistory(result.meta.sourceSessionId, projectPath, result.firstUserMessage || "bridged session");
+  }
+
+  const report: Record<string, unknown> = {
     success: true,
     direction: actualDirection,
     sourceFile: filePath,
@@ -374,6 +390,10 @@ function cmdConvert(
       ? `claude --resume ${result.meta.sourceSessionId}`
       : `codex --resume ${result.meta.sourceSessionId}`,
   };
+  if (actualDirection === "codex2claude" && result.sourceCwd) {
+    report.requiredCwd = result.sourceCwd;
+    report.fullResumeCommand = `cd ${result.sourceCwd} && claude --resume ${result.meta.sourceSessionId}`;
+  }
 
   if (jsonMode) {
     console.log(JSON.stringify(report, null, 2));
@@ -388,7 +408,12 @@ function cmdConvert(
     if (result.meta.lossyFields.length > 0) {
       console.log(`  \x1b[2mLossy:\x1b[0m      ${result.meta.lossyFields.join(", ")}`);
     }
-    console.log(`\n  \x1b[1mResume:\x1b[0m ${report.resumeHint}\n`);
+    console.log(`\n  \x1b[1mResume:\x1b[0m ${report.resumeHint}`);
+    if (actualDirection === "codex2claude" && result.sourceCwd) {
+      console.log(`\n  \x1b[33m⚠ Claude Code resolves sessions by cwd. Run from the original project directory:\x1b[0m`);
+      console.log(`  \x1b[1mcd ${result.sourceCwd} && ${report.resumeHint}\x1b[0m`);
+    }
+    console.log();
   }
 }
 
@@ -463,6 +488,82 @@ function getSessionPreview(filePath: string, format: string, limit: number): Mes
 }
 
 // ============================================================
+// Tail trimming
+// ============================================================
+
+/**
+ * Trim session lines to keep only the last N user turns.
+ * Preserves session_meta/turn_context headers and all records from the last N turns onwards.
+ */
+function trimToTail(lines: string[], tailTurns: number, format: string): string[] {
+  if (format === "codex") {
+    // Find all user message positions
+    const userPositions: number[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      try {
+        const obj = JSON.parse(lines[i]);
+        if (obj.type === "response_item" && obj.payload?.type === "message" && obj.payload?.role === "user") {
+          userPositions.push(i);
+        }
+      } catch { /* skip */ }
+    }
+
+    if (userPositions.length <= tailTurns) return lines; // nothing to trim
+
+    const cutIdx = userPositions[userPositions.length - tailTurns];
+
+    // Keep headers (session_meta, first turn_context) + everything from cutIdx onwards
+    const headers: string[] = [];
+    for (const line of lines.slice(0, cutIdx)) {
+      try {
+        const obj = JSON.parse(line);
+        if (obj.type === "session_meta" || obj.type === "turn_context") {
+          headers.push(line);
+          if (obj.type === "turn_context") break; // only need first one
+        }
+      } catch { /* skip */ }
+    }
+
+    return [...headers, ...lines.slice(cutIdx)];
+  } else if (format === "claude") {
+    // Find all user message positions
+    const userPositions: number[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      try {
+        const obj = JSON.parse(lines[i]);
+        if (obj.type === "user" && obj.message?.role === "user") {
+          // Skip tool_result-only user messages
+          const content = obj.message.content;
+          if (typeof content === "string" || (Array.isArray(content) && content.some((c: any) => c.type !== "tool_result"))) {
+            userPositions.push(i);
+          }
+        }
+      } catch { /* skip */ }
+    }
+
+    if (userPositions.length <= tailTurns) return lines;
+
+    const cutIdx = userPositions[userPositions.length - tailTurns];
+
+    // Keep file-history-snapshot + everything from cutIdx onwards
+    const headers: string[] = [];
+    for (const line of lines.slice(0, cutIdx)) {
+      try {
+        const obj = JSON.parse(line);
+        if (obj.type === "file-history-snapshot") {
+          headers.push(line);
+          break;
+        }
+      } catch { /* skip */ }
+    }
+
+    return [...headers, ...lines.slice(cutIdx)];
+  }
+
+  return lines;
+}
+
+// ============================================================
 // Target resolution
 // ============================================================
 
@@ -510,11 +611,15 @@ function resolveTarget(target: string): { filePath: string; format: "codex" | "c
   process.exit(1);
 }
 
-function generateOutputPath(direction: "codex2claude" | "claude2codex", sessionId: string): string {
+function generateOutputPath(direction: "codex2claude" | "claude2codex", sessionId: string, sourceCwd?: string): string {
   const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 
   if (direction === "codex2claude") {
-    const projectDir = join(claudeProjectsDir(), "-converted-from-codex");
+    // Place in the correct Claude Code project directory matching the source cwd
+    // Claude Code maps /home/user/project -> ~/.claude/projects/-home-user-project/
+    const cwd = sourceCwd || process.cwd();
+    const projectDirName = "-" + cwd.replace(/\//g, "-").replace(/^-/, "");
+    const projectDir = join(claudeProjectsDir(), projectDirName);
     mkdirSync(projectDir, { recursive: true });
     return join(projectDir, `${sessionId}.jsonl`);
   } else {
@@ -526,6 +631,21 @@ function generateOutputPath(direction: "codex2claude" | "claude2codex", sessionI
     mkdirSync(codexDir, { recursive: true });
     return join(codexDir, `converted-${ts}-${sessionId}.jsonl`);
   }
+}
+
+/**
+ * Register a converted session in Claude Code's history.jsonl so --resume can find it.
+ */
+function registerInClaudeHistory(sessionId: string, projectPath: string, firstMessage: string): void {
+  const historyPath = join(homedir(), ".claude", "history.jsonl");
+  const entry = JSON.stringify({
+    display: `[bridged from Codex] ${firstMessage.slice(0, 100)}`,
+    pastedContents: {},
+    timestamp: Date.now(),
+    project: projectPath,
+    sessionId,
+  });
+  appendFileSync(historyPath, entry + "\n");
 }
 
 main();

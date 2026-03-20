@@ -1,5 +1,7 @@
 # ai-session-bridge
 
+> **Preview** — tested Codex CLI → Claude Code direction. Claude Code → Codex direction converts but not yet verified with `codex --resume`. Contributions welcome.
+
 Bridge your AI coding sessions between **OpenAI Codex CLI** and **Anthropic Claude Code CLI**.
 
 Start a task in one tool, continue in the other. Both store sessions as JSONL — this tool converts between their formats bidirectionally.
@@ -51,8 +53,8 @@ npx tsx src/cli.ts list
 # Preview what's in a session before bridging
 npx tsx src/cli.ts preview 019ced67
 
-# Bridge Codex session -> Claude Code
-npx tsx src/cli.ts codex2claude 019ced67-e597-72d2-9e6d-657e520103b0
+# Bridge Codex session -> Claude Code (last 5 user turns)
+npx tsx src/cli.ts codex2claude 019ced67-e597-72d2-9e6d-657e520103b0 --tail 5
 
 # Bridge Claude Code session -> Codex
 npx tsx src/cli.ts claude2codex 70f732ba-5279-4674-a7a8-c99cc4771e33
@@ -75,6 +77,9 @@ npx tsx src/cli.ts list --json
 - **Partial ID**: Type 8+ characters of a session UUID instead of the full thing
 - **Message preview**: See the first messages before converting
 - **Tool name mapping**: `exec_command` <-> `Bash`, `read_file` <-> `Read`, etc.
+- **Tail trimming**: `--tail N` keeps only the last N user turns — essential for large sessions that overflow context
+- **History registration**: Automatically registers converted sessions in Claude Code's `history.jsonl`
+- **Correct project placement**: Converted sessions go into the right `~/.claude/projects/` subdirectory
 - **Converted session tracking**: Bridged sessions are marked `[bridged]` in list output
 - **AI agent friendly**: `--json` flag on every command for machine-readable output
 
@@ -147,8 +152,8 @@ npx tsx src/cli.ts list
 # Превью сессии перед конвертацией
 npx tsx src/cli.ts preview 019ced67
 
-# Codex -> Claude Code
-npx tsx src/cli.ts codex2claude 019ced67-e597-72d2-9e6d-657e520103b0
+# Codex -> Claude Code (последние 5 тернов)
+npx tsx src/cli.ts codex2claude 019ced67-e597-72d2-9e6d-657e520103b0 --tail 5
 
 # Claude Code -> Codex
 npx tsx src/cli.ts claude2codex 70f732ba-5279-4674-a7a8-c99cc4771e33

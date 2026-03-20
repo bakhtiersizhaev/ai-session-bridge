@@ -17,9 +17,10 @@ interface ConvertState {
   turnCounter: number;
   stats: ConversionMeta["stats"];
   lossyFields: Set<string>;
+  firstUserMessage: string;
 }
 
-export function convertClaudeToCodex(lines: string[]): { records: string[]; meta: Omit<ConversionMeta, "sourceFile" | "outputPath"> } {
+export function convertClaudeToCodex(lines: string[]): { records: string[]; meta: Omit<ConversionMeta, "sourceFile" | "outputPath">; sourceCwd?: string; firstUserMessage?: string } {
   const state: ConvertState = {
     sessionId: randomUUID(),
     cwd: process.cwd(),
@@ -28,6 +29,7 @@ export function convertClaudeToCodex(lines: string[]): { records: string[]; meta
     turnCounter: 0,
     stats: { totalRecords: 0, convertedRecords: 0, skippedRecords: 0, toolCalls: 0, userMessages: 0, assistantMessages: 0 },
     lossyFields: new Set(),
+    firstUserMessage: "",
   };
 
   const output: string[] = [];
@@ -141,6 +143,10 @@ export function convertClaudeToCodex(lines: string[]): { records: string[]; meta
           payload: { type: "task_started", turn_id: newTurnId },
         }));
 
+        if (!state.firstUserMessage && content.trim()) {
+          state.firstUserMessage = content.trim();
+        }
+
         output.push(JSON.stringify({
           timestamp,
           type: "response_item",
@@ -244,6 +250,8 @@ export function convertClaudeToCodex(lines: string[]): { records: string[]; meta
       lossyFields: [...state.lossyFields],
       stats: state.stats,
     },
+    sourceCwd: state.cwd,
+    firstUserMessage: state.firstUserMessage,
   };
 }
 
