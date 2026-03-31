@@ -373,7 +373,7 @@ function cmdConvert(
   mkdirSync(dirname(finalOutput), { recursive: true });
   writeFileSync(finalOutput, result.records.join("\n") + "\n");
 
-  // Register in Claude Code's history.jsonl so --resume can discover the session
+  // Register in Claude Code's history.jsonl so `claude --resume <id>` can discover the session
   if (actualDirection === "codex2claude") {
     const projectPath = result.sourceCwd || process.cwd();
     registerInClaudeHistory(result.meta.sourceSessionId, projectPath, result.firstUserMessage || "bridged session");
@@ -388,7 +388,7 @@ function cmdConvert(
     lossyFields: result.meta.lossyFields,
     resumeHint: actualDirection === "codex2claude"
       ? `claude --resume ${result.meta.sourceSessionId}`
-      : `codex --resume ${result.meta.sourceSessionId}`,
+      : `codex resume ${result.meta.sourceSessionId}`,
   };
   if (actualDirection === "codex2claude" && result.sourceCwd) {
     report.requiredCwd = result.sourceCwd;

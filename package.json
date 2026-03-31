@@ -9,7 +9,7 @@
   "scripts": {
     "bridge": "tsx src/cli.ts",
     "list": "tsx src/cli.ts list",
-    "test": "tsx src/cli.ts list --json > /dev/null && echo 'OK'"
+    "test": "node -e \"const {spawnSync}=require('child_process');let r;if(process.platform==='win32'){const comspec=process.env.ComSpec||'cmd.exe';r=spawnSync(comspec,['/d','/s','/c','npx tsx src/cli.ts list --json'],{stdio:'ignore'});}else{r=spawnSync('npx',['tsx','src/cli.ts','list','--json'],{stdio:'ignore'});}if(r.status===0)console.log('OK');process.exit(r.status??1);\""
   },
   "keywords": [
     "codex",
