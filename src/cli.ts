@@ -13,7 +13,6 @@
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync } from "fs";
 import { dirname, join, resolve } from "path";
-import { homedir } from "os";
 import { convertCodexToClaude } from "./codex2claude.js";
 import { convertClaudeToCodex } from "./claude2codex.js";
 import {
@@ -24,6 +23,7 @@ import {
   detectFormat,
   claudeProjectsDir,
   codexSessionsDir,
+  claudeHome,
 } from "./discover.js";
 import type { ConversionMeta } from "./types.js";
 
@@ -390,9 +390,15 @@ function cmdConvert(
       ? `claude --resume ${result.meta.sourceSessionId}`
       : `codex resume ${result.meta.sourceSessionId}`,
   };
-  if (actualDirection === "codex2claude" && result.sourceCwd) {
+  if (result.sourceCwd) {
     report.requiredCwd = result.sourceCwd;
-    report.fullResumeCommand = `cd ${result.sourceCwd} && claude --resume ${result.meta.sourceSessionId}`;
+    if (actualDirection === "codex2claude") {
+      report.fullResumeCommand = `cd ${result.sourceCwd} && claude --resume ${result.meta.sourceSessionId}`;
+    } else {
+      // Codex resume filters by cwd by default; either cd in or pass --all
+      report.fullResumeCommand = `cd ${result.sourceCwd} && codex resume ${result.meta.sourceSessionId}`;
+      report.alternativeResumeCommand = `codex resume --all ${result.meta.sourceSessionId}`;
+    }
   }
 
   if (jsonMode) {
@@ -409,9 +415,15 @@ function cmdConvert(
       console.log(`  \x1b[2mLossy:\x1b[0m      ${result.meta.lossyFields.join(", ")}`);
     }
     console.log(`\n  \x1b[1mResume:\x1b[0m ${report.resumeHint}`);
-    if (actualDirection === "codex2claude" && result.sourceCwd) {
-      console.log(`\n  \x1b[33m⚠ Claude Code resolves sessions by cwd. Run from the original project directory:\x1b[0m`);
-      console.log(`  \x1b[1mcd ${result.sourceCwd} && ${report.resumeHint}\x1b[0m`);
+    if (result.sourceCwd) {
+      if (actualDirection === "codex2claude") {
+        console.log(`\n  \x1b[33m⚠ Claude Code resolves sessions by cwd. Run from the original project directory:\x1b[0m`);
+        console.log(`  \x1b[1mcd ${result.sourceCwd} && ${report.resumeHint}\x1b[0m`);
+      } else {
+        console.log(`\n  \x1b[33m⚠ Codex filters resume picker by cwd. Either run from the source project, or use --all:\x1b[0m`);
+        console.log(`  \x1b[1mcd ${result.sourceCwd} && ${report.resumeHint}\x1b[0m`);
+        console.log(`  \x1b[2mor:\x1b[0m \x1b[1mcodex resume --all ${result.meta.sourceSessionId}\x1b[0m`);
+      }
     }
     console.log();
   }
@@ -615,10 +627,13 @@ function generateOutputPath(direction: "codex2claude" | "claude2codex", sessionI
   const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 
   if (direction === "codex2claude") {
-    // Place in the correct Claude Code project directory matching the source cwd
-    // Claude Code maps /home/user/project -> ~/.claude/projects/-home-user-project/
+    // Place in the correct Claude Code project directory matching the source cwd.
+    // Claude Code uses path separators -> dashes for project dir naming:
+    //   /home/user/project          -> -home-user-project
+    //   D:\projects\MyApp     -> D--projects-MyApp
+    // Replacing /, \, : with - reproduces both conventions correctly.
     const cwd = sourceCwd || process.cwd();
-    const projectDirName = "-" + cwd.replace(/\//g, "-").replace(/^-/, "");
+    const projectDirName = cwd.replace(/[/\\:]/g, "-");
     const projectDir = join(claudeProjectsDir(), projectDirName);
     mkdirSync(projectDir, { recursive: true });
     return join(projectDir, `${sessionId}.jsonl`);
@@ -637,7 +652,7 @@ function generateOutputPath(direction: "codex2claude" | "claude2codex", sessionI
  * Register a converted session in Claude Code's history.jsonl so --resume can find it.
  */
 function registerInClaudeHistory(sessionId: string, projectPath: string, firstMessage: string): void {
-  const historyPath = join(homedir(), ".claude", "history.jsonl");
+  const historyPath = join(claudeHome(), "history.jsonl");
   const entry = JSON.stringify({
     display: `[bridged from Codex] ${firstMessage.slice(0, 100)}`,
     pastedContents: {},

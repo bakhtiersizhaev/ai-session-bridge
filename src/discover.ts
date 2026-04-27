@@ -1,4 +1,4 @@
-import { readdirSync, statSync, existsSync } from "fs";
+import { readdirSync, statSync, existsSync, openSync, readSync, closeSync } from "fs";
 import { join, basename } from "path";
 import { homedir } from "os";
 
@@ -183,10 +183,13 @@ export function listClaudeSessions(limit = 20): ClaudeSessionEntry[] {
       const fp = join(pp, file);
       const st = statSync(fp);
       const id = basename(file, ".jsonl");
+      // Prefer authoritative cwd from the JSONL itself (handles spaces/special
+      // chars in paths that the dir-name reverse heuristic can't recover).
+      const cwd = readClaudeCwd(fp) ?? projectDirToCwd(project);
       sessions.push({
         id,
         file: fp,
-        project: project.replace(/^-/, "/").replace(/-/g, "/"),
+        project: cwd,
         size: st.size,
         converted: isConverted,
         mtime: st.mtimeMs,
@@ -220,6 +223,43 @@ export function detectFormat(firstLine: string): DetectedFormat {
 // ============================================================
 // Helpers
 // ============================================================
+
+/**
+ * Reverse Claude Code's project-dir naming back to the original cwd.
+ * Mirrors generateOutputPath()'s cwd -> dir transform in cli.ts.
+ *   D--projects-MyApp -> D:\projects\MyApp  (Windows)
+ *   -home-user-project      -> /home/user/project       (Linux/macOS)
+ *   -converted-from-codex   -> /converted/from/codex    (sentinel, harmless)
+ */
+export function projectDirToCwd(dir: string): string {
+  const winMatch = dir.match(/^([A-Za-z])--(.*)$/);
+  if (winMatch) {
+    const drive = winMatch[1];
+    const rest = winMatch[2].replace(/-/g, "\\");
+    return `${drive}:\\${rest}`;
+  }
+  return dir.replace(/^-/, "/").replace(/-/g, "/");
+}
+
+/**
+ * Cheaply read the `cwd` field from a Claude session file by scanning only
+ * the first ~16 KB. Avoids loading multi-megabyte JSONLs just to render `list`.
+ */
+function readClaudeCwd(filePath: string): string | null {
+  try {
+    const fd = openSync(filePath, "r");
+    const buf = Buffer.alloc(16 * 1024);
+    const n = readSync(fd, buf, 0, buf.length, 0);
+    closeSync(fd);
+    const head = buf.toString("utf-8", 0, n);
+    const m = head.match(/"cwd"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+    if (!m) return null;
+    // Unescape JSON string (covers \\ and \")
+    return JSON.parse(`"${m[1]}"`);
+  } catch {
+    return null;
+  }
+}
 
 function safeReaddir(path: string): string[] {
   try {
