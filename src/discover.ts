@@ -5,11 +5,36 @@ import { homedir } from "os";
 const HOME = homedir();
 
 // ============================================================
+// Home directory resolution (respect env var overrides)
+// ============================================================
+
+/**
+ * Resolve Codex home directory. Respects $CODEX_HOME (set by official Codex CLI
+ * to redirect config/sessions away from the default $HOME/.codex location —
+ * common on Windows where users separate Codex Windows-native from WSL2 setups).
+ */
+export function codexHome(): string {
+  const override = process.env.CODEX_HOME;
+  if (override && override.trim()) return override;
+  return join(HOME, ".codex");
+}
+
+/**
+ * Resolve Claude Code home directory. Respects $CLAUDE_CONFIG_DIR (the env var
+ * Claude Code itself reads to relocate the entire .claude directory).
+ */
+export function claudeHome(): string {
+  const override = process.env.CLAUDE_CONFIG_DIR;
+  if (override && override.trim()) return override;
+  return join(HOME, ".claude");
+}
+
+// ============================================================
 // Codex session discovery
 // ============================================================
 
 export function codexSessionsDir(): string {
-  return join(HOME, ".codex", "sessions");
+  return join(codexHome(), "sessions");
 }
 
 /**
@@ -101,7 +126,7 @@ export function listCodexSessions(limit = 20): CodexSessionEntry[] {
 // ============================================================
 
 export function claudeProjectsDir(): string {
-  return join(HOME, ".claude", "projects");
+  return join(claudeHome(), "projects");
 }
 
 /**
