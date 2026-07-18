@@ -1,10 +1,16 @@
-# ai-session-bridge
+<p align="center"><img src="assets/logo.svg" width="96" alt="ai-session-bridge logo — two rail lines joined by a crossover switch"></p>
 
-> **Preview** — tested Codex CLI → Claude Code direction. Claude Code → Codex direction converts but not yet verified with `codex --resume`. Contributions welcome.
+# ai-session-bridge <sub>(aka **claude2codex** / **codex2claude**)</sub>
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-1a7f37.svg)](LICENSE)
+[![Node >= 18](https://img.shields.io/badge/node-%3E%3D18-3FA69B.svg)](package.json)
+[![Website](https://img.shields.io/badge/website-github%20pages-D97757.svg)](https://bakhtiersizhaev.github.io/ai-session-bridge/)
+
+> **v0.2** — both directions verified end-to-end on real sessions: Codex CLI → `claude --resume` and Claude Code → `codex resume`, including appending new turns after resume. See [verification](#verified-end-to-end).
 
 Bridge your AI coding sessions between **OpenAI Codex CLI** and **Anthropic Claude Code CLI**.
 
-Start a task in one tool, continue in the other. Both store sessions as JSONL — this tool converts between their formats bidirectionally.
+Start a task in one tool, continue in the other. Both store sessions as JSONL — this tool converts between their formats bidirectionally. Searching for a *claude codex bridge*, *claude2codex converter*, or a way to *transfer a Claude Code session to Codex* (or back)? This is it.
 
 ---
 
@@ -87,13 +93,21 @@ npx tsx src/cli.ts list --json
 
 | Codex CLI | Claude Code |
 |-----------|-------------|
-| `exec_command` | `Bash` |
+| `shell_command` / `exec_command` | `Bash` |
 | `read_file` | `Read` |
 | `write_file` | `Write` |
 | `patch_file` | `Edit` |
 | `list_directory` | `Glob` |
 | `search_files` | `Grep` |
+| `update_plan` | `TodoWrite` |
 | `request_user_input` | `AskUserQuestion` |
+
+### Verified end-to-end
+
+Both directions were tested with a "secret codeword" round-trip on real CLIs (Codex CLI 0.126, Claude Code 2.1):
+
+1. Tell tool A a codeword → bridge the session → `resume` in tool B → ask for the codeword → tool B answers correctly.
+2. Send a second message after resume → new turns append to the bridged session file (Codex side requires the session-index registration this tool performs automatically).
 
 ### Session storage paths
 
@@ -101,7 +115,7 @@ npx tsx src/cli.ts list --json
 |------|------|
 | Codex CLI | `~/.codex/sessions/YYYY/MM/DD/*.jsonl` |
 | Claude Code | `~/.claude/projects/-{PROJECT_PATH}/*.jsonl` |
-| Bridged (Codex->Claude) | `~/.claude/projects/-converted-from-codex/*.jsonl` |
+| Bridged (Codex->Claude) | `~/.claude/projects/{project dir of the source cwd}/*.jsonl` |
 | Bridged (Claude->Codex) | `~/.codex/sessions/YYYY/MM/DD/converted-*.jsonl` |
 
 ### What's preserved / what's lost

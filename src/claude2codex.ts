@@ -49,13 +49,15 @@ export function convertClaudeToCodex(lines: string[]): { records: string[]; meta
     }
   }
 
-  // Emit session_meta
+  // Emit session_meta. `session_id` duplicates `id` — current Codex builds
+  // write both, and session tooling keys off session_id when present.
   const now = new Date().toISOString();
   output.push(JSON.stringify({
     timestamp: now,
     type: "session_meta",
     payload: {
       id: state.sessionId,
+      session_id: state.sessionId,
       timestamp: now,
       cwd: state.cwd,
       originator: "session_converter",
@@ -103,6 +105,20 @@ export function convertClaudeToCodex(lines: string[]): { records: string[]; meta
         break;
       }
 
+      // Claude Code bookkeeping records with no Codex equivalent. Listed
+      // explicitly so the skip is intentional, not an accident of the default.
+      case "mode":
+      case "permission-mode":
+      case "last-prompt":
+      case "queue-operation":
+      case "custom-title":
+      case "attachment":
+      case "system": {
+        state.lossyFields.add(`claude.${rec.type}`);
+        state.stats.skippedRecords++;
+        break;
+      }
+
       case "user": {
         const ur = rec as unknown as ClaudeUserRecord;
         const content = normalizeContent(ur.message.content);
@@ -117,9 +133,7 @@ export function convertClaudeToCodex(lines: string[]): { records: string[]; meta
                 payload: {
                   type: "function_call_output",
                   call_id: item.tool_use_id as string,
-                  output: typeof item.content === "string"
-                    ? item.content
-                    : JSON.stringify(item.content),
+                  output: normalizeToolResultContent(item.content),
                 },
               }));
               state.stats.convertedRecords++;
@@ -170,14 +184,18 @@ export function convertClaudeToCodex(lines: string[]): { records: string[]; meta
         const toolUses: Array<{ id: string; name: string; input: Record<string, unknown> }> = [];
 
         for (const item of msgContent) {
-          if (item.type === "text") {
-            textParts.push((item as any).text);
-          } else if (item.type === "tool_use") {
+          const block = item as unknown as Record<string, unknown>;
+          if (block.type === "text") {
+            textParts.push(block.text as string);
+          } else if (block.type === "tool_use") {
             toolUses.push({
-              id: (item as any).id,
-              name: (item as any).name,
-              input: (item as any).input || {},
+              id: block.id as string,
+              name: block.name as string,
+              input: (block.input as Record<string, unknown>) || {},
             });
+          } else if (block.type === "thinking" || block.type === "redacted_thinking") {
+            // Extended-thinking blocks have no Codex equivalent.
+            state.lossyFields.add("thinking_blocks");
           }
         }
 
@@ -255,19 +273,22 @@ export function convertClaudeToCodex(lines: string[]): { records: string[]; meta
   };
 }
 
-// Map Claude Code tool names to Codex equivalents
+// Map Claude Code tool names to Codex equivalents.
+// shell_command is the exec tool name current Codex CLI/Desktop sessions use;
+// exec_command is kept as the legacy alias for older rollouts.
 function mapToolName(name: string, _direction: string): string {
   const claude2codex: Record<string, string> = {
-    Bash: "exec_command",
+    Bash: "shell_command",
     Read: "read_file",
     Write: "write_file",
     Edit: "patch_file",
     Glob: "list_directory",
     Grep: "search_files",
     AskUserQuestion: "request_user_input",
-    Task: "exec_command", // closest equivalent
-    WebFetch: "exec_command",
-    WebSearch: "exec_command",
+    TodoWrite: "update_plan",
+    Task: "shell_command", // closest equivalent
+    WebFetch: "shell_command",
+    WebSearch: "shell_command",
   };
   return claude2codex[name] || name;
 }
@@ -278,6 +299,22 @@ function normalizeContent(content: string | Array<Record<string, unknown>>): str
     .filter((c) => c.type === "text")
     .map((c) => c.text as string)
     .join("\n");
+}
+
+/**
+ * Flatten a Claude tool_result payload to plain text for Codex
+ * function_call_output. Text blocks are joined; non-text blocks (images etc.)
+ * are dropped rather than dumped as base64 JSON noise.
+ */
+function normalizeToolResultContent(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    const texts = (content as Array<Record<string, unknown>>)
+      .filter((c) => c && c.type === "text" && typeof c.text === "string")
+      .map((c) => c.text as string);
+    if (texts.length > 0) return texts.join("\n");
+  }
+  return JSON.stringify(content ?? "");
 }
 
 function safeParse(line: string): Record<string, unknown> | null {

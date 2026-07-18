@@ -24,10 +24,12 @@ import {
   claudeProjectsDir,
   codexSessionsDir,
   claudeHome,
+  codexHome,
+  cwdToClaudeProjectDir,
 } from "./discover.js";
 import type { ConversionMeta } from "./types.js";
 
-const VERSION = "0.1.0-preview";
+const VERSION = "0.2.0";
 const NAME = "ai-session-bridge";
 
 const HELP = `
@@ -48,6 +50,10 @@ Options:
   --dry-run              Preview conversion stats without writing files
   --tail <n>             Only convert last N user turns (useful for large sessions)
   --preview-lines <n>    Number of message previews in list/preview (default: 5)
+  --codex-home <path>    Override Codex home (default: $CODEX_HOME, else first
+                         of ~/.codex, ~/.codex-win, ~/.config/codex with sessions)
+  --claude-home <path>   Override Claude home (default: $CLAUDE_CONFIG_DIR, else
+                         first of ~/.claude, ~/.config/claude with projects)
   --help, -h             Show this help
   --version, -v          Show version
 
@@ -72,8 +78,27 @@ function main(): void {
     process.exit(0);
   }
 
-  const command = args[0];
-  const target = args[1];
+  // Positional args = argv minus flags and the values of value-taking flags.
+  // (Previously `list --json` treated "--json" as the [codex|claude] filter.)
+  const FLAGS_WITH_VALUE = new Set(["--output", "-o", "--tail", "--preview-lines", "--codex-home", "--claude-home"]);
+
+  // Explicit home overrides for exotic setups. They plug into the same env-var
+  // mechanism Codex/Claude themselves honor, so every downstream resolver
+  // (discovery, conversion, history/index registration) picks them up.
+  const codexHomeIdx = args.indexOf("--codex-home");
+  if (codexHomeIdx !== -1 && args[codexHomeIdx + 1]) process.env.CODEX_HOME = resolve(args[codexHomeIdx + 1]);
+  const claudeHomeIdx = args.indexOf("--claude-home");
+  if (claudeHomeIdx !== -1 && args[claudeHomeIdx + 1]) process.env.CLAUDE_CONFIG_DIR = resolve(args[claudeHomeIdx + 1]);
+  const positional: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    if (FLAGS_WITH_VALUE.has(args[i])) {
+      i++; // skip the flag's value
+    } else if (!args[i].startsWith("-")) {
+      positional.push(args[i]);
+    }
+  }
+  const command = positional[0];
+  const target = positional[1];
   const jsonMode = args.includes("--json");
   const dryRun = args.includes("--dry-run");
   const outputIdx = args.indexOf("--output") !== -1 ? args.indexOf("--output") : args.indexOf("-o");
@@ -272,6 +297,18 @@ function cmdInfo(target: string, jsonMode: boolean): void {
         info.startedAt = first.payload.timestamp;
       }
     } catch { /* skip */ }
+    // Codex Desktop sessions often carry the model in turn_context, not session_meta
+    if (!info.model) {
+      for (const line of lines) {
+        try {
+          const obj = JSON.parse(line);
+          if (obj.type === "turn_context" && obj.payload?.model) {
+            info.model = obj.payload.model;
+            break;
+          }
+        } catch { /* skip */ }
+      }
+    }
   } else if (format === "claude") {
     try {
       const first = lines.find((l) => {
@@ -377,6 +414,11 @@ function cmdConvert(
   if (actualDirection === "codex2claude") {
     const projectPath = result.sourceCwd || process.cwd();
     registerInClaudeHistory(result.meta.sourceSessionId, projectPath, result.firstUserMessage || "bridged session");
+  } else {
+    // Mirror on the Codex side: codex resume can READ an unindexed rollout
+    // file, but appending new turns fails with "thread not found" unless the
+    // session is present in session_index.jsonl.
+    registerInCodexSessionIndex(result.meta.sourceSessionId, result.firstUserMessage || "bridged session");
   }
 
   const report: Record<string, unknown> = {
@@ -585,10 +627,11 @@ function resolveTarget(target: string): { filePath: string; format: "codex" | "c
     process.exit(1);
   }
 
-  // Direct file path
+  // Direct file path — detect from the head of the file, not just line 1
+  // (modern Claude sessions can start with mode/queue-operation records).
   if (existsSync(target)) {
-    const firstLine = readFileSync(target, "utf-8").split("\n")[0];
-    return { filePath: resolve(target), format: detectFormat(firstLine) };
+    const head = readFileSync(target, "utf-8").split("\n").slice(0, 50).join("\n");
+    return { filePath: resolve(target), format: detectFormat(head) };
   }
 
   // Unified search: list all sessions, match by full or partial ID, prefer originals
@@ -627,14 +670,10 @@ function generateOutputPath(direction: "codex2claude" | "claude2codex", sessionI
   const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 
   if (direction === "codex2claude") {
-    // Place in the correct Claude Code project directory matching the source cwd.
-    // Claude Code uses path separators -> dashes for project dir naming:
-    //   /home/user/project          -> -home-user-project
-    //   D:\projects\MyApp     -> D--projects-MyApp
-    // Replacing /, \, : with - reproduces both conventions correctly.
+    // Place in the exact project directory Claude Code derives from the source
+    // cwd, otherwise `claude --resume` will not discover the session.
     const cwd = sourceCwd || process.cwd();
-    const projectDirName = cwd.replace(/[/\\:]/g, "-");
-    const projectDir = join(claudeProjectsDir(), projectDirName);
+    const projectDir = join(claudeProjectsDir(), cwdToClaudeProjectDir(cwd));
     mkdirSync(projectDir, { recursive: true });
     return join(projectDir, `${sessionId}.jsonl`);
   } else {
@@ -661,6 +700,27 @@ function registerInClaudeHistory(sessionId: string, projectPath: string, firstMe
     sessionId,
   });
   appendFileSync(historyPath, entry + "\n");
+}
+
+/**
+ * Register a converted session in Codex's session_index.jsonl.
+ * Without this, `codex resume <id>` opens the file read-only in practice:
+ * loading works, but recording new rollout items fails with
+ * "failed to record rollout items: thread <id> not found".
+ * Entry shape matches what Codex CLI/Desktop writes itself.
+ */
+function registerInCodexSessionIndex(sessionId: string, firstMessage: string): void {
+  const indexPath = join(codexHome(), "session_index.jsonl");
+  if (existsSync(indexPath)) {
+    const existing = readFileSync(indexPath, "utf-8");
+    if (existing.includes(`"id":"${sessionId}"`) || existing.includes(`"id": "${sessionId}"`)) return;
+  }
+  const entry = JSON.stringify({
+    id: sessionId,
+    thread_name: `[bridged from Claude] ${firstMessage.slice(0, 80)}`,
+    updated_at: new Date().toISOString(),
+  });
+  appendFileSync(indexPath, entry + "\n");
 }
 
 main();

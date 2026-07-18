@@ -1,6 +1,6 @@
 {
   "name": "ai-session-bridge",
-  "version": "0.1.0-preview",
+  "version": "0.2.0",
   "description": "Bridge your AI coding sessions between OpenAI Codex CLI and Anthropic Claude Code CLI. Convert JSONL sessions bidirectionally and continue where you left off.",
   "type": "module",
   "bin": {
@@ -24,9 +24,14 @@
     "ai-coding",
     "jsonl",
     "codex-cli",
-    "claude-code-cli"
+    "claude-code-cli",
+    "claude2codex",
+    "codex2claude",
+    "claude-codex-bridge",
+    "session-converter",
+    "resume-session"
   ],
-  "author": "",
+  "author": "Bakhtier Sizhaev",
   "license": "MIT",
   "engines": {
     "node": ">=18"
@@ -35,5 +40,13 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "tsx": "^4.21.0"
+  },
+  "homepage": "https://bakhtiersizhaev.github.io/ai-session-bridge/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bakhtiersizhaev/ai-session-bridge.git"
+  },
+  "bugs": {
+    "url": "https://github.com/bakhtiersizhaev/ai-session-bridge/issues"
   }
 }

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="ai-session-bridge logo: two rail tracks joined by a crossover switch">
+  <rect width="128" height="128" fill="#101312"/>
+  <!-- upper rail: Codex line -->
+  <line x1="10" y1="38" x2="118" y2="38" stroke="#3FA69B" stroke-width="10"/>
+  <!-- lower rail: Claude line -->
+  <line x1="10" y1="90" x2="118" y2="90" stroke="#D97757" stroke-width="10"/>
+  <!-- crossover switch -->
+  <line x1="44" y1="38" x2="84" y2="90" stroke="#F2EFEA" stroke-width="10"/>
+  <!-- switch points -->
+  <rect x="38" y="32" width="12" height="12" fill="#F2EFEA"/>
+  <rect x="78" y="84" width="12" height="12" fill="#F2EFEA"/>
+</svg>

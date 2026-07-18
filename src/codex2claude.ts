@@ -99,6 +99,13 @@ export function convertCodexToClaude(lines: string[]): { records: string[]; meta
 
       case "event_msg": {
         const ev = rec.payload as Record<string, unknown>;
+        // token_count is per-turn telemetry; agent_message/user_message duplicate
+        // the canonical response_item records 1:1 (verified on real Codex Desktop
+        // sessions) — converting them would double every message in the output.
+        if (ev.type === "token_count" || ev.type === "agent_message" || ev.type === "user_message") {
+          state.stats.skippedRecords++;
+          break;
+        }
         const uuid = randomUUID();
         output.push(JSON.stringify({
           parentUuid: state.lastUuid,
@@ -163,7 +170,9 @@ export function convertCodexToClaude(lines: string[]): { records: string[]; meta
             currentTurnTexts = [];
 
             const text = msg.content.map((c) => c.text).join("\n");
-            if (!state.firstUserMessage && text.trim()) {
+            // Skip injected context blocks when picking the display message —
+            // Codex Desktop prepends AGENTS.md / permissions as user messages.
+            if (!state.firstUserMessage && text.trim() && !isInjectedContext(text)) {
               state.firstUserMessage = text.trim();
             }
             const uuid = randomUUID();
@@ -196,6 +205,11 @@ export function convertCodexToClaude(lines: string[]): { records: string[]; meta
           const fo = payload as unknown as CodexFunctionCallOutputPayload;
           pendingFunctionOutputs.set(fo.call_id, normalizeToolOutput(fo.output));
           state.stats.convertedRecords++;
+        } else {
+          // reasoning (encrypted) and any future response_item types — count them
+          // so totalRecords always equals converted + skipped.
+          state.stats.skippedRecords++;
+          state.lossyFields.add(`response_item.${ptype}`);
         }
         break;
       }
@@ -356,9 +370,12 @@ function makeClaudeAssistant(
   };
 }
 
-// Map Codex tool names to Claude Code equivalents
+// Map Codex tool names to Claude Code equivalents.
+// shell_command is the dominant exec tool in current Codex CLI/Desktop
+// sessions; exec_command is the legacy name. update_plan pairs with TodoWrite.
 function mapToolName(name: string, _direction: string): string {
   const codex2claude: Record<string, string> = {
+    shell_command: "Bash",
     exec_command: "Bash",
     read_file: "Read",
     write_file: "Write",
@@ -366,6 +383,7 @@ function mapToolName(name: string, _direction: string): string {
     search_files: "Grep",
     create_file: "Write",
     patch_file: "Edit",
+    update_plan: "TodoWrite",
     request_user_input: "AskUserQuestion",
   };
   return codex2claude[name] || name;
@@ -396,4 +414,10 @@ function safeParse(line: string): CodexRecord | null {
   } catch {
     return null;
   }
+}
+
+/** True for Codex user-role records that are injected context, not human input. */
+function isInjectedContext(text: string): boolean {
+  const t = text.trimStart();
+  return t.startsWith("# AGENTS.md") || t.startsWith("<permissions") || t.startsWith("[SYSTEM/DEVELOPER]");
 }
