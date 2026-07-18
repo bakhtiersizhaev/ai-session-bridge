@@ -166,6 +166,7 @@ export interface ClaudeProgressRecord {
   cwd: string;
   sessionId: string;
   version: string;
+  gitBranch?: string;
   type: "progress";
   data: Record<string, unknown>;
   toolUseID?: string;
