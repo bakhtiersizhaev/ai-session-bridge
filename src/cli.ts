@@ -29,7 +29,7 @@ import {
 } from "./discover.js";
 import type { ConversionMeta } from "./types.js";
 
-const VERSION = "0.1.0-preview";
+const VERSION = "0.2.0";
 const NAME = "ai-session-bridge";
 
 const HELP = `

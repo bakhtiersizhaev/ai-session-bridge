@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>claude2codex — bridge Claude Code ↔ Codex CLI sessions | ai-session-bridge</title>
+<meta name="description" content="ai-session-bridge (claude2codex): free open-source CLI that converts AI coding sessions between OpenAI Codex CLI and Anthropic Claude Code CLI. Transfer a session, resume it in the other tool, keep full history and tool calls.">
+<meta name="keywords" content="claude2codex, codex2claude, claude codex bridge, ai session bridge, transfer claude code session to codex, convert codex session to claude, claude code resume, codex resume, jsonl session converter, ai coding session migration">
+<link rel="canonical" href="https://bakhtiersizhaev.github.io/ai-session-bridge/">
+<link rel="icon" type="image/svg+xml" href="logo.svg">
+<meta property="og:type" content="website">
+<meta property="og:title" content="claude2codex — bridge Claude Code ↔ Codex CLI sessions">
+<meta property="og:description" content="Convert AI coding sessions between OpenAI Codex CLI and Claude Code CLI. Start in one tool, resume in the other — history, tool calls and context intact.">
+<meta property="og:url" content="https://bakhtiersizhaev.github.io/ai-session-bridge/">
+<meta property="og:image" content="https://bakhtiersizhaev.github.io/ai-session-bridge/logo.svg">
+<meta name="twitter:card" content="summary">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "ai-session-bridge (claude2codex)",
+  "alternateName": ["claude2codex", "codex2claude", "claude codex bridge"],
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "Windows, macOS, Linux",
+  "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
+  "license": "https://opensource.org/licenses/MIT",
+  "codeRepository": "https://github.com/bakhtiersizhaev/ai-session-bridge",
+  "description": "CLI tool that converts AI coding sessions between OpenAI Codex CLI and Anthropic Claude Code CLI (JSONL, bidirectional), so you can resume a session in the other tool.",
+  "keywords": "claude2codex, codex2claude, session converter, Codex CLI, Claude Code"
+}
+</script>
+<style>
+  :root{
+    --bg:#101312;          /* signal-box black-green */
+    --rail-codex:#3FA69B;  /* Codex line */
+    --rail-claude:#D97757; /* Claude line */
+    --lamp:#F2EFEA;        /* indicator lamp white */
+    --dim:#9AA6A2;         /* panel lettering */
+  }
+  @media (prefers-reduced-motion: reduce){ *{animation:none!important;transition:none!important} }
+  *{box-sizing:border-box;margin:0}
+  body{
+    background:var(--bg); color:var(--lamp);
+    font-family:"IBM Plex Mono","Cascadia Mono","JetBrains Mono",ui-monospace,monospace;
+    line-height:1.55; font-size:16px;
+  }
+  a{color:inherit}
+  .wrap{max-width:72ch;margin:0 auto;padding:0 24px}
+  /* track-diagram separators: the recurring motif */
+  .rail{height:6px;border:0}
+  .rail.codex{background:var(--rail-codex)}
+  .rail.claude{background:var(--rail-claude)}
+  header{padding:56px 0 40px}
+  .panel-id{color:var(--dim);font-size:13px;letter-spacing:.08em}
+  h1{font-size:clamp(2rem,6vw,3.4rem);font-weight:700;letter-spacing:-0.02em;text-wrap:balance;margin:12px 0 8px}
+  h1 .c1{color:var(--rail-claude)} h1 .c2{color:var(--rail-codex)}
+  .sub{color:var(--dim);max-width:60ch;text-wrap:pretty}
+  /* the crossover diagram */
+  .diagram{margin:40px 0;display:block;width:100%;height:auto}
+  h2{font-size:1.05rem;font-weight:700;margin:0 0 16px;text-transform:none}
+  h2::before{content:"■ ";font-size:.8em}
+  section{padding:40px 0}
+  section.on-codex h2::before{color:var(--rail-codex)}
+  section.on-claude h2::before{color:var(--rail-claude)}
+  pre{
+    background:#0A0C0B;border:1px solid #2A312F;padding:18px 20px;overflow-x:auto;
+    font-size:14px;line-height:1.7;margin:14px 0;
+  }
+  pre .p{color:var(--dim)} pre .cx{color:var(--rail-codex)} pre .cl{color:var(--rail-claude)}
+  table{border-collapse:collapse;width:100%;font-size:14px;margin:14px 0}
+  td,th{border:1px solid #2A312F;padding:8px 12px;text-align:left;vertical-align:top}
+  th{color:var(--dim);font-weight:400}
+  .btns{display:flex;gap:0;margin:28px 0;flex-wrap:wrap}
+  .btn{
+    display:inline-block;padding:14px 22px;text-decoration:none;font-weight:700;font-size:15px;
+    border:2px solid var(--lamp);
+  }
+  .btn.primary{background:var(--lamp);color:var(--bg)}
+  .btn+.btn{border-left:0}
+  footer{padding:36px 0 56px;color:var(--dim);font-size:13px}
+  footer a{color:var(--lamp)}
+  p+p{margin-top:12px}
+  ul{padding-left:1.4em}
+</style>
+</head>
+<body>
+
+<header class="wrap">
+  <div class="panel-id">AI-SESSION-BRIDGE · SIGNAL BOX No.1 · MIT LICENSE</div>
+  <h1><span class="c1">claude</span>2<span class="c2">codex</span> — switch your AI coding session onto the other line</h1>
+  <p class="sub">One CLI that converts sessions between <strong>Anthropic Claude Code</strong> and <strong>OpenAI Codex CLI</strong>, both directions. Start a task in one tool, resume it in the other — messages, tool calls and working directory intact.</p>
+
+  <!-- crossover track diagram -->
+  <svg class="diagram" viewBox="0 0 720 160" role="img" aria-label="Track diagram: a Codex session crosses over to the Claude line and vice versa">
+    <line x1="0" y1="40" x2="720" y2="40" stroke="#3FA69B" stroke-width="6"/>
+    <line x1="0" y1="120" x2="720" y2="120" stroke="#D97757" stroke-width="6"/>
+    <line x1="280" y1="40" x2="440" y2="120" stroke="#F2EFEA" stroke-width="6"/>
+    <line x1="280" y1="120" x2="440" y2="40" stroke="#F2EFEA" stroke-width="6"/>
+    <rect x="272" y="32" width="16" height="16" fill="#F2EFEA"/>
+    <rect x="432" y="112" width="16" height="16" fill="#F2EFEA"/>
+    <rect x="272" y="112" width="16" height="16" fill="#F2EFEA"/>
+    <rect x="432" y="32" width="16" height="16" fill="#F2EFEA"/>
+    <text x="8" y="26" fill="#3FA69B" font-size="14" font-family="inherit">CODEX LINE — ~/.codex/sessions/*.jsonl</text>
+    <text x="8" y="146" fill="#D97757" font-size="14" font-family="inherit">CLAUDE LINE — ~/.claude/projects/*.jsonl</text>
+    <text x="330" y="90" fill="#F2EFEA" font-size="14" font-family="inherit">bridge</text>
+  </svg>
+
+  <div class="btns">
+    <a class="btn primary" href="https://github.com/bakhtiersizhaev/ai-session-bridge">GitHub repo</a>
+    <a class="btn" href="https://github.com/bakhtiersizhaev/ai-session-bridge#quick-start">Quick start</a>
+  </div>
+</header>
+
+<hr class="rail codex">
+
+<section class="wrap on-codex">
+  <h2>Codex CLI → Claude Code</h2>
+  <pre><span class="p">$</span> npx tsx src/cli.ts <span class="cx">codex2claude</span> 019f73a5
+<span class="p"># bridged into ~/.claude/projects/&lt;your-project&gt;/019f73a5-….jsonl</span>
+<span class="p">$</span> claude --resume 019f73a5-3eca-7d10-8484-886430131e53
+<span class="cl">›</span> What was the secret codeword I told you earlier?
+<span class="cl">PINEAPPLE-42-OMEGA</span>   <span class="p"># full context survived the switch</span></pre>
+</section>
+
+<hr class="rail claude">
+
+<section class="wrap on-claude">
+  <h2>Claude Code → Codex CLI</h2>
+  <pre><span class="p">$</span> npx tsx src/cli.ts <span class="cl">claude2codex</span> ac6e1142
+<span class="p"># bridged into ~/.codex/sessions/… + registered in session index</span>
+<span class="p">$</span> codex resume ac6e1142-6fed-4eaf-b75f-2371404b858b
+<span class="cx">›</span> What was the secret codeword I told you earlier?
+<span class="cx">MANGO-77-DELTA</span>   <span class="p"># and new turns keep appending on later resumes</span></pre>
+</section>
+
+<hr class="rail codex">
+
+<section class="wrap">
+  <h2>What gets mapped</h2>
+  <table>
+    <tr><th>Codex CLI record</th><th>Claude Code record</th></tr>
+    <tr><td>response_item (user / assistant)</td><td>type: "user" / "assistant"</td></tr>
+    <tr><td>function_call / function_call_output</td><td>tool_use / tool_result</td></tr>
+    <tr><td>shell_command · read_file · write_file · patch_file · update_plan</td><td>Bash · Read · Write · Edit · TodoWrite</td></tr>
+    <tr><td>session_meta + session index registration</td><td>project dir placement + history.jsonl</td></tr>
+  </table>
+  <p class="sub">Also known as: <em>claude codex bridge</em>, <em>codex2claude</em>, <em>Claude Code to Codex session converter</em>. Works on Windows, macOS and Linux; respects <code>CODEX_HOME</code> and <code>CLAUDE_CONFIG_DIR</code>.</p>
+</section>
+
+<hr class="rail claude">
+
+<footer class="wrap">
+  <p>MIT · <a href="https://github.com/bakhtiersizhaev/ai-session-bridge">github.com/bakhtiersizhaev/ai-session-bridge</a> · report issues &amp; contribute — the Claude→Codex line especially welcomes test reports.</p>
+</footer>
+
+</body>
+</html>
