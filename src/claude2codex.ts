@@ -33,6 +33,35 @@ export function convertClaudeToCodex(lines: string[]): { records: string[]; meta
   };
 
   const output: string[] = [];
+  let activeTurnId: string | null = null;
+  let lastAssistantMessage = "";
+
+  const closeTurn = (timestamp: string): void => {
+    if (!activeTurnId) return;
+    output.push(JSON.stringify({
+      timestamp,
+      type: "event_msg",
+      payload: { type: "task_complete", turn_id: activeTurnId, last_agent_message: lastAssistantMessage },
+    }));
+    activeTurnId = null;
+    lastAssistantMessage = "";
+  };
+
+  const startTurn = (timestamp: string): void => {
+    activeTurnId = randomUUID();
+    output.push(JSON.stringify({
+      timestamp,
+      type: "turn_context",
+      payload: {
+        turn_id: activeTurnId,
+        cwd: state.cwd,
+        current_date: timestamp.slice(0, 10),
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        model: state.model,
+      },
+    }));
+    output.push(JSON.stringify({ timestamp, type: "event_msg", payload: { type: "task_started", turn_id: activeTurnId } }));
+  };
 
   // First pass: extract session metadata from first user/assistant record
   for (const line of lines) {
@@ -67,30 +96,6 @@ export function convertClaudeToCodex(lines: string[]): { records: string[]; meta
       model: state.model,
     },
   } satisfies CodexSessionMeta));
-
-  // Emit initial turn_context
-  state.turnCounter++;
-  const turnId = randomUUID();
-  output.push(JSON.stringify({
-    timestamp: now,
-    type: "turn_context",
-    payload: {
-      turn_id: turnId,
-      cwd: state.cwd,
-      current_date: now.slice(0, 10),
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      model: state.model,
-    },
-  }));
-
-  output.push(JSON.stringify({
-    timestamp: now,
-    type: "event_msg",
-    payload: {
-      type: "task_started",
-      turn_id: turnId,
-    },
-  }));
 
   for (const line of lines) {
     const rec = safeParse(line);
@@ -147,19 +152,25 @@ export function convertClaudeToCodex(lines: string[]): { records: string[]; meta
           if (!hasNonToolResult) break;
         }
 
-        // New user turn — emit turn boundaries
+        // New user turn — close the previous one and emit current Codex boundaries.
+        closeTurn(timestamp);
         state.turnCounter++;
-        const newTurnId = randomUUID();
-
-        output.push(JSON.stringify({
-          timestamp,
-          type: "event_msg",
-          payload: { type: "task_started", turn_id: newTurnId },
-        }));
+        startTurn(timestamp);
 
         if (!state.firstUserMessage && content.trim()) {
           state.firstUserMessage = content.trim();
         }
+
+        output.push(JSON.stringify({
+          timestamp,
+          type: "event_msg",
+          payload: {
+            type: "user_message",
+            client_id: ur.uuid || randomUUID(),
+            message: content,
+            images: [], local_images: [], audio: [], local_audio: [], text_elements: [],
+          },
+        }));
 
         output.push(JSON.stringify({
           timestamp,
@@ -201,15 +212,22 @@ export function convertClaudeToCodex(lines: string[]): { records: string[]; meta
 
         // Emit text as assistant message
         if (textParts.length > 0) {
+          const assistantText = textParts.join("\n");
           output.push(JSON.stringify({
             timestamp,
             type: "response_item",
             payload: {
               type: "message",
               role: "assistant",
-              content: [{ type: "output_text", text: textParts.join("\n") }],
+              content: [{ type: "output_text", text: assistantText }],
             },
           }));
+          output.push(JSON.stringify({
+            timestamp,
+            type: "event_msg",
+            payload: { type: "agent_message", message: assistantText, phase: "final_answer", memory_citation: null },
+          }));
+          lastAssistantMessage = assistantText;
           state.stats.assistantMessages++;
           state.stats.convertedRecords++;
         }
@@ -251,12 +269,7 @@ export function convertClaudeToCodex(lines: string[]): { records: string[]; meta
     }
   }
 
-  // Emit task_completed
-  output.push(JSON.stringify({
-    timestamp: now,
-    type: "event_msg",
-    payload: { type: "task_completed", turn_id: turnId },
-  }));
+  closeTurn(now);
 
   return {
     records: output,
@@ -290,7 +303,9 @@ function mapToolName(name: string, _direction: string): string {
     WebFetch: "shell_command",
     WebSearch: "shell_command",
   };
-  return claude2codex[name] || name;
+  const mapped = claude2codex[name] || name;
+  const sanitized = mapped.replace(/[^a-zA-Z0-9_-]+/g, "_");
+  return (sanitized || "claude_tool").slice(0, 64);
 }
 
 function normalizeContent(content: string | Array<Record<string, unknown>>): string {

@@ -6,7 +6,7 @@
 [![Node >= 18](https://img.shields.io/badge/node-%3E%3D18-3FA69B.svg)](package.json)
 [![Website](https://img.shields.io/badge/website-github%20pages-D97757.svg)](https://bakhtiersizhaev.github.io/ai-session-bridge/)
 
-> **v0.2** — both directions verified end-to-end on real sessions: Codex CLI → `claude --resume` and Claude Code → `codex resume`, including appending new turns after resume. See [verification](#verified-end-to-end).
+> **v0.3** — imports both Claude Code JSONL sessions and Claude Chat data exports, registers sessions in modern Codex, and renders imported messages in the Codex app UI.
 
 Bridge your AI coding sessions between **OpenAI Codex CLI** and **Anthropic Claude Code CLI**.
 
@@ -65,6 +65,12 @@ npx tsx src/cli.ts codex2claude 019ced67-e597-72d2-9e6d-657e520103b0 --tail 5
 # Bridge Claude Code session -> Codex
 npx tsx src/cli.ts claude2codex 70f732ba-5279-4674-a7a8-c99cc4771e33
 
+# Import every conversation from a Claude Chat data export
+npx tsx src/cli.ts import-claude-chat ~/Downloads/claude-export
+
+# Inspect an archive without writing anything
+npx tsx src/cli.ts import-claude-chat ~/Downloads/claude-export --dry-run --json
+
 # Auto-detect format and bridge
 npx tsx src/cli.ts auto /path/to/session.jsonl
 
@@ -85,6 +91,10 @@ npx tsx src/cli.ts list --json
 - **Tool name mapping**: `exec_command` <-> `Bash`, `read_file` <-> `Read`, etc.
 - **Tail trimming**: `--tail N` keeps only the last N user turns — essential for large sessions that overflow context
 - **History registration**: Automatically registers converted sessions in Claude Code's `history.jsonl`
+- **Modern Codex registration**: Registers sessions in both `session_index.jsonl` and `state_5.sqlite` (Node.js 22.5+), so they appear in the app sidebar and remain writable after resume
+- **Claude Chat archives**: Imports every conversation from the official Claude `conversations.json` data export as a separate Codex session
+- **Visible app history**: Emits `user_message` and `agent_message` UI events, so imported text is rendered in Codex instead of being model-only context
+- **Responses API-safe tools**: Normalizes imported tool names to `^[a-zA-Z0-9_-]+$` and prevents invalid `input[].name` errors
 - **Correct project placement**: Converted sessions go into the right `~/.claude/projects/` subdirectory
 - **Converted session tracking**: Bridged sessions are marked `[bridged]` in list output
 - **AI agent friendly**: `--json` flag on every command for machine-readable output
@@ -117,6 +127,19 @@ Both directions were tested with a "secret codeword" round-trip on real CLIs (Co
 | Claude Code | `~/.claude/projects/-{PROJECT_PATH}/*.jsonl` |
 | Bridged (Codex->Claude) | `~/.claude/projects/{project dir of the source cwd}/*.jsonl` |
 | Bridged (Claude->Codex) | `~/.codex/sessions/YYYY/MM/DD/converted-*.jsonl` |
+| Imported Claude Chat archive | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` |
+
+### Importing a Claude Chat data export
+
+Point `import-claude-chat` at either the extracted export directory or its
+`conversations.json` file. Each Claude conversation becomes a separate Codex
+session with a `[Claude Chat]` title. Text, available attachment extracts, tool
+calls, and tool results are preserved; hidden thinking blocks are skipped.
+
+Some Claude exports contain conversation metadata but empty message bodies.
+The dry-run report shows `withText` and `withoutText` counts, and textless
+conversations receive an explicit placeholder instead of pretending that their
+content was recovered.
 
 ### What's preserved / what's lost
 
@@ -172,6 +195,12 @@ npx tsx src/cli.ts codex2claude 019ced67-e597-72d2-9e6d-657e520103b0 --tail 5
 # Claude Code -> Codex
 npx tsx src/cli.ts claude2codex 70f732ba-5279-4674-a7a8-c99cc4771e33
 
+# Импорт всех разговоров из экспорта Claude Chat
+npx tsx src/cli.ts import-claude-chat ~/Downloads/claude-export
+
+# Предварительная проверка без записи
+npx tsx src/cli.ts import-claude-chat ~/Downloads/claude-export --dry-run --json
+
 # Авто-определение формата
 npx tsx src/cli.ts auto /path/to/session.jsonl
 
@@ -185,6 +214,16 @@ npx tsx src/cli.ts auto 019ced67 --dry-run
 - Tool calls и результаты — 1:1 с переименованием инструментов
 - Progress events — маппятся
 - Метаданные (session_meta, turn_context, file-history) — частично, помечаются как lossy
+- История отображается в интерфейсе Codex благодаря событиям `user_message` / `agent_message`
+- Сессии регистрируются в современном `state_5.sqlite` и появляются в боковой панели
+- Имена инструментов очищаются до формата Responses API, поэтому импорт не вызывает ошибку `input[].name`
+
+### Экспорт Claude Chat
+
+Команда `import-claude-chat` принимает папку распакованного архива или файл
+`conversations.json` и создаёт отдельную сессию Codex для каждого разговора.
+Если Claude оставил в экспорте только метаданные без текста, это явно отражается
+в отчёте `withText` / `withoutText`; отсутствующий текст не подменяется выдуманным.
 
 ---
 

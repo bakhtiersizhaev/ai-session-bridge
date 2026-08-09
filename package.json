@@ -1,6 +1,6 @@
 {
   "name": "ai-session-bridge",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Bridge your AI coding sessions between OpenAI Codex CLI and Anthropic Claude Code CLI. Convert JSONL sessions bidirectionally and continue where you left off.",
   "type": "module",
   "bin": {
@@ -9,7 +9,8 @@
   "scripts": {
     "bridge": "tsx src/cli.ts",
     "list": "tsx src/cli.ts list",
-    "test": "node -e \"const {spawnSync}=require('child_process');let r;if(process.platform==='win32'){const comspec=process.env.ComSpec||'cmd.exe';r=spawnSync(comspec,['/d','/s','/c','npx tsx src/cli.ts list --json'],{stdio:'ignore'});}else{r=spawnSync('npx',['tsx','src/cli.ts','list','--json'],{stdio:'ignore'});}if(r.status===0)console.log('OK');process.exit(r.status??1);\""
+    "test": "node --import tsx --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [
     "codex",
@@ -36,10 +37,10 @@
   "engines": {
     "node": ">=18"
   },
-  "dependencies": {},
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "tsx": "^4.21.0"
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
   },
   "homepage": "https://bakhtiersizhaev.github.io/ai-session-bridge/",
   "repository": {

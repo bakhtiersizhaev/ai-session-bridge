@@ -11,7 +11,7 @@
  *   ai-session-bridge preview      <session-id-or-file>
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync, statSync } from "fs";
 import { dirname, join, resolve } from "path";
 import { convertCodexToClaude } from "./codex2claude.js";
 import { convertClaudeToCodex } from "./claude2codex.js";
@@ -28,8 +28,10 @@ import {
   cwdToClaudeProjectDir,
 } from "./discover.js";
 import type { ConversionMeta } from "./types.js";
+import { convertClaudeChatConversation, type ClaudeChatConversation } from "./claude-chat.js";
+import { registerCodexThread } from "./codex-register.js";
 
-const VERSION = "0.2.0";
+const VERSION = "0.3.0";
 const NAME = "ai-session-bridge";
 
 const HELP = `
@@ -43,6 +45,7 @@ Commands:
   list         [codex|claude]                List recent sessions with message previews
   info         <id|file>                     Show detailed session metadata
   preview      <id|file>                     Show first messages from a session
+  import-claude-chat <export-dir|json>        Import Claude Chat data export into Codex
 
 Options:
   --output, -o <path>    Output file path (default: auto-generated)
@@ -54,6 +57,8 @@ Options:
                          of ~/.codex, ~/.codex-win, ~/.config/codex with sessions)
   --claude-home <path>   Override Claude home (default: $CLAUDE_CONFIG_DIR, else
                          first of ~/.claude, ~/.config/claude with projects)
+  --cwd <path>           Working directory for imported Claude Chat sessions
+  --model <name>         Codex model metadata for imported Claude Chat sessions
   --help, -h             Show this help
   --version, -v          Show version
 
@@ -63,6 +68,7 @@ Examples:
   ${NAME} codex2claude 019ced67-e597-72d2-9e6d-657e520103b0 # Bridge Codex -> Claude Code
   ${NAME} auto /path/to/session.jsonl -o ~/bridged.jsonl    # Auto-detect and convert
   ${NAME} auto 019ced67 --json                              # JSON output for AI agents
+  ${NAME} import-claude-chat ~/Downloads/claude-export      # Import conversations.json
 `;
 
 function main(): void {
@@ -80,7 +86,7 @@ function main(): void {
 
   // Positional args = argv minus flags and the values of value-taking flags.
   // (Previously `list --json` treated "--json" as the [codex|claude] filter.)
-  const FLAGS_WITH_VALUE = new Set(["--output", "-o", "--tail", "--preview-lines", "--codex-home", "--claude-home"]);
+  const FLAGS_WITH_VALUE = new Set(["--output", "-o", "--tail", "--preview-lines", "--codex-home", "--claude-home", "--cwd", "--model"]);
 
   // Explicit home overrides for exotic setups. They plug into the same env-var
   // mechanism Codex/Claude themselves honor, so every downstream resolver
@@ -126,6 +132,9 @@ function main(): void {
       break;
     case "auto":
       cmdConvert(target, "auto", outputPath, jsonMode, dryRun, tailTurns);
+      break;
+    case "import-claude-chat":
+      cmdImportClaudeChat(target, args, jsonMode, dryRun);
       break;
     default:
       console.error(`Unknown command: ${command}\nRun '${NAME} --help' for usage.`);
@@ -418,7 +427,15 @@ function cmdConvert(
     // Mirror on the Codex side: codex resume can READ an unindexed rollout
     // file, but appending new turns fails with "thread not found" unless the
     // session is present in session_index.jsonl.
-    registerInCodexSessionIndex(result.meta.sourceSessionId, result.firstUserMessage || "bridged session");
+    const title = `[bridged from Claude] ${(result.firstUserMessage || "bridged session").slice(0, 80)}`;
+    const registration = registerCodexThread({
+      sessionId: result.meta.sourceSessionId,
+      rolloutPath: finalOutput,
+      cwd: result.sourceCwd || process.cwd(),
+      title,
+      firstUserMessage: result.firstUserMessage || "bridged session",
+    });
+    if (registration.warning && !jsonMode) console.warn(`  Warning: ${registration.warning}`);
   }
 
   const report: Record<string, unknown> = {
@@ -469,6 +486,83 @@ function cmdConvert(
     }
     console.log();
   }
+}
+
+// ============================================================
+// Claude Chat data export import
+// ============================================================
+
+function cmdImportClaudeChat(target: string, args: string[], jsonMode: boolean, dryRun: boolean): void {
+  if (!target) {
+    console.error("Provide a Claude export directory or conversations.json file.");
+    process.exit(1);
+  }
+  const source = resolve(target);
+  const conversationsPath = statSync(source).isDirectory() ? join(source, "conversations.json") : source;
+  if (!existsSync(conversationsPath)) {
+    console.error(`conversations.json not found: ${conversationsPath}`);
+    process.exit(1);
+  }
+  const parsed = JSON.parse(readFileSync(conversationsPath, "utf8")) as unknown;
+  if (!Array.isArray(parsed)) throw new Error("Claude conversations.json must contain an array.");
+
+  const value = (flag: string): string | undefined => {
+    const index = args.indexOf(flag);
+    return index >= 0 ? args[index + 1] : undefined;
+  };
+  const cwd = value("--cwd") ? resolve(value("--cwd")!) : process.cwd();
+  const model = value("--model");
+  const converted = (parsed as ClaudeChatConversation[]).map((conversation) =>
+    convertClaudeChatConversation(conversation, { cwd, model }),
+  );
+  const summary = {
+    conversations: converted.length,
+    withText: converted.filter((item) => item.hasConversationText).length,
+    withoutText: converted.filter((item) => !item.hasConversationText).length,
+    userMessages: converted.reduce((sum, item) => sum + item.stats.userMessages, 0),
+    assistantMessages: converted.reduce((sum, item) => sum + item.stats.assistantMessages, 0),
+    toolCalls: converted.reduce((sum, item) => sum + item.stats.toolCalls, 0),
+    skippedThinking: converted.reduce((sum, item) => sum + item.stats.skippedThinking, 0),
+  };
+  if (dryRun) {
+    const report = { mode: "dry-run", ...summary, sampleTitles: converted.slice(0, 5).map((item) => item.title) };
+    console.log(jsonMode ? JSON.stringify(report, null, 2) : formatImportReport(report));
+    return;
+  }
+
+  const now = new Date();
+  const outputDir = join(codexSessionsDir(), String(now.getFullYear()), String(now.getMonth() + 1).padStart(2, "0"), String(now.getDate()).padStart(2, "0"));
+  mkdirSync(outputDir, { recursive: true });
+  let imported = 0;
+  let skipped = 0;
+  const warnings = new Set<string>();
+  for (const item of converted) {
+    if (findCodexSession(item.sessionId)) {
+      skipped++;
+      continue;
+    }
+    const fileTimestamp = item.createdAt.replace(/[:.]/g, "-").replace("Z", "");
+    const outputFile = join(outputDir, `rollout-${fileTimestamp}-${item.sessionId}.jsonl`);
+    writeFileSync(outputFile, item.records.join("\n") + "\n", { flag: "wx" });
+    const registration = registerCodexThread({
+      sessionId: item.sessionId,
+      rolloutPath: outputFile,
+      cwd,
+      title: item.title,
+      firstUserMessage: item.firstUserMessage,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
+      model,
+    });
+    if (registration.warning) warnings.add(registration.warning);
+    imported++;
+  }
+  const report = { mode: "import", imported, skipped, ...summary, warnings: [...warnings] };
+  console.log(jsonMode ? JSON.stringify(report, null, 2) : formatImportReport(report));
+}
+
+function formatImportReport(report: Record<string, unknown>): string {
+  return `\n  Claude Chat import\n\n${Object.entries(report).map(([key, value]) => `  ${key}: ${Array.isArray(value) ? value.join(", ") : value}`).join("\n")}\n`;
 }
 
 // ============================================================
@@ -700,27 +794,6 @@ function registerInClaudeHistory(sessionId: string, projectPath: string, firstMe
     sessionId,
   });
   appendFileSync(historyPath, entry + "\n");
-}
-
-/**
- * Register a converted session in Codex's session_index.jsonl.
- * Without this, `codex resume <id>` opens the file read-only in practice:
- * loading works, but recording new rollout items fails with
- * "failed to record rollout items: thread <id> not found".
- * Entry shape matches what Codex CLI/Desktop writes itself.
- */
-function registerInCodexSessionIndex(sessionId: string, firstMessage: string): void {
-  const indexPath = join(codexHome(), "session_index.jsonl");
-  if (existsSync(indexPath)) {
-    const existing = readFileSync(indexPath, "utf-8");
-    if (existing.includes(`"id":"${sessionId}"`) || existing.includes(`"id": "${sessionId}"`)) return;
-  }
-  const entry = JSON.stringify({
-    id: sessionId,
-    thread_name: `[bridged from Claude] ${firstMessage.slice(0, 80)}`,
-    updated_at: new Date().toISOString(),
-  });
-  appendFileSync(indexPath, entry + "\n");
 }
 
 main();

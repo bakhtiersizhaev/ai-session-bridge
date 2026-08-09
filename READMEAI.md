@@ -2,7 +2,7 @@
 
 ## What this tool does
 
-Converts AI coding session JSONL files between OpenAI Codex CLI and Anthropic Claude Code CLI formats. Both CLI tools store sessions as JSONL (one JSON object per line) but with different schemas. This tool maps between them bidirectionally.
+Converts AI coding session JSONL files between OpenAI Codex CLI and Anthropic Claude Code CLI formats. Both CLI tools store sessions as JSONL (one JSON object per line) but with different schemas. This tool maps between them bidirectionally. It also imports Claude Chat data exports (`conversations.json`) as separate, writable Codex sessions whose messages are visible in the app UI.
 
 ## How to use (for AI agents)
 
@@ -24,6 +24,10 @@ npx tsx src/cli.ts auto <session-id> --json
 # Explicit direction
 npx tsx src/cli.ts codex2claude <session-id> --json
 npx tsx src/cli.ts claude2codex <session-id> --json
+
+# Import an official Claude Chat data export
+npx tsx src/cli.ts import-claude-chat <export-dir-or-conversations.json> --json
+npx tsx src/cli.ts import-claude-chat <export-dir> --dry-run --json
 
 # Dry run
 npx tsx src/cli.ts auto <session-id> --json --dry-run
