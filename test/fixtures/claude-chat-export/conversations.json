@@ -1,0 +1,31 @@
+[
+  {
+    "uuid": "44444444-4444-4444-8444-444444444444",
+    "name": "Archived chat fixture",
+    "created_at": "2026-01-01T00:00:00Z",
+    "updated_at": "2026-01-01T00:00:02Z",
+    "chat_messages": [
+      {
+        "uuid": "55555555-5555-4555-8555-555555555555",
+        "sender": "human",
+        "created_at": "2026-01-01T00:00:00Z",
+        "text": "Can Codex show this imported message?",
+        "content": [{ "type": "text", "text": "Can Codex show this imported message?" }],
+        "attachments": [],
+        "files": []
+      },
+      {
+        "uuid": "66666666-6666-4666-8666-666666666666",
+        "sender": "assistant",
+        "created_at": "2026-01-01T00:00:01Z",
+        "text": "Yes, it is visible in the UI.",
+        "content": [
+          { "type": "text", "text": "Yes, it is visible in the UI." },
+          { "type": "tool_use", "id": "tool-1", "name": "visualize:read_me", "input": {} }
+        ],
+        "attachments": [],
+        "files": []
+      }
+    ]
+  }
+]
