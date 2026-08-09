@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>claude2codex — bridge Claude Code ↔ Codex CLI sessions | ai-session-bridge</title>
-<meta name="description" content="ai-session-bridge (claude2codex): free open-source CLI that converts AI coding sessions between OpenAI Codex CLI and Anthropic Claude Code CLI. Transfer a session, resume it in the other tool, keep full history and tool calls.">
-<meta name="keywords" content="claude2codex, codex2claude, claude codex bridge, ai session bridge, transfer claude code session to codex, convert codex session to claude, claude code resume, codex resume, jsonl session converter, ai coding session migration">
+<title>ai-session-bridge — Claude Code, Claude Chat ↔ Codex CLI sessions</title>
+<meta name="description" content="Free open-source CLI for moving AI sessions between OpenAI Codex CLI and Anthropic Claude Code, plus importing official Claude Chat exports into Codex. Resume work with messages and tool calls preserved.">
+<meta name="keywords" content="claude2codex, codex2claude, claude chat export to codex, claude codex bridge, ai session bridge, transfer claude code session to codex, convert codex session to claude, claude code resume, codex resume, jsonl session converter, ai coding session migration">
 <link rel="canonical" href="https://bakhtiersizhaev.github.io/ai-session-bridge/">
 <link rel="icon" type="image/svg+xml" href="logo.svg">
 <meta property="og:type" content="website">
-<meta property="og:title" content="claude2codex — bridge Claude Code ↔ Codex CLI sessions">
-<meta property="og:description" content="Convert AI coding sessions between OpenAI Codex CLI and Claude Code CLI. Start in one tool, resume in the other — history, tool calls and context intact.">
+<meta property="og:title" content="ai-session-bridge — Claude Code, Claude Chat ↔ Codex">
+<meta property="og:description" content="Convert Claude Code and Codex CLI sessions in both directions, or import a Claude Chat archive into Codex.">
 <meta property="og:url" content="https://bakhtiersizhaev.github.io/ai-session-bridge/">
 <meta property="og:image" content="https://bakhtiersizhaev.github.io/ai-session-bridge/logo.svg">
 <meta name="twitter:card" content="summary">
@@ -25,8 +25,8 @@
   "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
   "license": "https://opensource.org/licenses/MIT",
   "codeRepository": "https://github.com/bakhtiersizhaev/ai-session-bridge",
-  "description": "CLI tool that converts AI coding sessions between OpenAI Codex CLI and Anthropic Claude Code CLI (JSONL, bidirectional), so you can resume a session in the other tool.",
-  "keywords": "claude2codex, codex2claude, session converter, Codex CLI, Claude Code"
+  "description": "CLI tool that converts AI coding sessions between OpenAI Codex CLI and Anthropic Claude Code, and imports official Claude Chat data exports into Codex.",
+  "keywords": "claude2codex, codex2claude, Claude Chat export, session converter, Codex CLI, Claude Code"
 }
 </script>
 <style>
@@ -86,9 +86,9 @@
 <body>
 
 <header class="wrap">
-  <div class="panel-id">AI-SESSION-BRIDGE · SIGNAL BOX No.1 · MIT LICENSE</div>
+  <div class="panel-id">AI-SESSION-BRIDGE v0.3.0 · SIGNAL BOX No.1 · MIT LICENSE</div>
   <h1><span class="c1">claude</span>2<span class="c2">codex</span> — switch your AI coding session onto the other line</h1>
-  <p class="sub">One CLI that converts sessions between <strong>Anthropic Claude Code</strong> and <strong>OpenAI Codex CLI</strong>, both directions. Start a task in one tool, resume it in the other — messages, tool calls and working directory intact.</p>
+  <p class="sub">One CLI that converts sessions between <strong>Anthropic Claude Code</strong> and <strong>OpenAI Codex CLI</strong>, both directions — and imports official <strong>Claude Chat</strong> archives into Codex. Start a task in one tool, resume it in the other, or bring archived chats along.</p>
 
   <!-- crossover track diagram -->
   <svg class="diagram" viewBox="0 0 720 160" role="img" aria-label="Track diagram: a Codex session crosses over to the Claude line and vice versa">
@@ -134,6 +134,18 @@
 </section>
 
 <hr class="rail codex">
+
+<section class="wrap on-codex">
+  <h2>Claude Chat archive → Codex</h2>
+  <p class="sub">Import every conversation from an official Claude data export. Each chat becomes a separate, writable Codex session with UI-visible messages, available attachment extracts and tool activity.</p>
+  <pre><span class="p">$</span> npx tsx src/cli.ts <span class="cl">import-claude-chat</span> ~/Downloads/claude-export
+<span class="p"># finds conversations.json and writes one Codex rollout per conversation</span>
+<span class="p">$</span> npx tsx src/cli.ts import-claude-chat ~/Downloads/claude-export <span class="cx">--dry-run --json</span>
+<span class="p"># inspect counts and titles first; writes nothing</span></pre>
+  <p class="sub">Exports that contain metadata but no message body are reported honestly instead of being presented as recovered text.</p>
+</section>
+
+<hr class="rail claude">
 
 <section class="wrap">
   <h2>What gets mapped</h2>
