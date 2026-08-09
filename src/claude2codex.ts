@@ -81,6 +81,7 @@ export function convertClaudeToCodex(lines: string[]): { records: string[]; meta
   // Emit session_meta. `session_id` duplicates `id` — current Codex builds
   // write both, and session tooling keys off session_id when present.
   const now = new Date().toISOString();
+  let lastProcessedTimestamp = now;
   output.push(JSON.stringify({
     timestamp: now,
     type: "session_meta",
@@ -102,6 +103,7 @@ export function convertClaudeToCodex(lines: string[]): { records: string[]; meta
     if (!rec) continue;
     state.stats.totalRecords++;
     const timestamp = (rec.timestamp as string) || now;
+    lastProcessedTimestamp = timestamp;
 
     switch (rec.type) {
       case "file-history-snapshot": {
@@ -269,7 +271,7 @@ export function convertClaudeToCodex(lines: string[]): { records: string[]; meta
     }
   }
 
-  closeTurn(now);
+  closeTurn(lastProcessedTimestamp);
 
   return {
     records: output,

@@ -498,6 +498,10 @@ function cmdImportClaudeChat(target: string, args: string[], jsonMode: boolean, 
     process.exit(1);
   }
   const source = resolve(target);
+  if (!existsSync(source)) {
+    console.error(`conversations.json not found: ${source}`);
+    process.exit(1);
+  }
   const conversationsPath = statSync(source).isDirectory() ? join(source, "conversations.json") : source;
   if (!existsSync(conversationsPath)) {
     console.error(`conversations.json not found: ${conversationsPath}`);

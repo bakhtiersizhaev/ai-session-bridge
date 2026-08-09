@@ -39,7 +39,10 @@ export function convertClaudeChatConversation(
   conversation: ClaudeChatConversation,
   options: { cwd?: string; model?: string; titlePrefix?: string } = {},
 ): ClaudeChatConversion {
-  const sessionId = conversation.uuid || randomUUID();
+  const rawSessionId = clean(conversation.uuid);
+  const sessionId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rawSessionId)
+    ? rawSessionId
+    : randomUUID();
   const now = new Date().toISOString();
   const createdAt = timestamp(conversation.created_at, now);
   const updatedAt = timestamp(conversation.updated_at, createdAt);
@@ -159,7 +162,7 @@ function toolResult(content: unknown): string {
     const texts = content.filter((item) => item && item.type === "text").map((item) => clean(item.text)).filter(Boolean);
     if (texts.length) return texts.join("\n");
   }
-  return JSON.stringify(content ?? "");
+  return JSON.stringify(content ?? "") ?? "";
 }
 
 function clean(value: unknown): string { return String(value ?? "").replaceAll("\u0000", "").trim(); }

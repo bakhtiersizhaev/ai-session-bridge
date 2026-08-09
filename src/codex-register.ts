@@ -49,7 +49,16 @@ export function registerCodexThread(input: CodexThreadRegistration): Registratio
     };
   }
 
-  const db = new DatabaseSync(statePath);
+  let db: Database;
+  try {
+    db = new DatabaseSync(statePath);
+  } catch {
+    return {
+      sessionIndex,
+      stateDatabase: "unavailable",
+      warning: "Codex state database could not be opened; session_index.jsonl was updated as a fallback.",
+    };
+  }
   try {
     if (db.prepare("SELECT 1 AS found FROM threads WHERE id = ?").get(input.sessionId)) {
       return { sessionIndex, stateDatabase: "existing" };
@@ -94,6 +103,12 @@ export function registerCodexThread(input: CodexThreadRegistration): Registratio
     db.prepare(`INSERT INTO threads (${quoted.join(", ")}) VALUES (${placeholders.join(", ")})`)
       .run(...insertColumns.map((column) => row[column]));
     return { sessionIndex, stateDatabase: "added" };
+  } catch {
+    return {
+      sessionIndex,
+      stateDatabase: "unavailable",
+      warning: "Codex state database schema or write operation was unavailable; session_index.jsonl was updated as a fallback.",
+    };
   } finally {
     db.close();
   }
