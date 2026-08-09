@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ai-session-bridge — Claude Code, Claude Chat ↔ Codex CLI sessions</title>
-<meta name="description" content="Free open-source CLI for moving AI sessions between OpenAI Codex CLI and Anthropic Claude Code, plus importing official Claude Chat exports into Codex. Resume work with messages and tool calls preserved.">
+<title>ai-session-bridge — Claude, Codex App &amp; CLI session transfer</title>
+<meta name="description" content="Free open-source session bridge for Codex CLI and Codex app, Claude Code, and official Claude Chat exports. Resume work with messages and tool calls preserved.">
 <meta name="keywords" content="claude2codex, codex2claude, claude chat export to codex, claude codex bridge, ai session bridge, transfer claude code session to codex, convert codex session to claude, claude code resume, codex resume, jsonl session converter, ai coding session migration">
 <link rel="canonical" href="https://bakhtiersizhaev.github.io/ai-session-bridge/">
 <link rel="icon" type="image/svg+xml" href="logo.svg">
 <meta property="og:type" content="website">
-<meta property="og:title" content="ai-session-bridge — Claude Code, Claude Chat ↔ Codex">
-<meta property="og:description" content="Convert Claude Code and Codex CLI sessions in both directions, or import a Claude Chat archive into Codex.">
+<meta property="og:title" content="ai-session-bridge — Claude, Codex App &amp; CLI">
+<meta property="og:description" content="Move Claude Code sessions to and from Codex, or import a Claude web/desktop app export into Codex App.">
 <meta property="og:url" content="https://bakhtiersizhaev.github.io/ai-session-bridge/">
 <meta property="og:image" content="https://bakhtiersizhaev.github.io/ai-session-bridge/logo.svg">
 <meta name="twitter:card" content="summary">
@@ -25,7 +25,7 @@
   "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
   "license": "https://opensource.org/licenses/MIT",
   "codeRepository": "https://github.com/bakhtiersizhaev/ai-session-bridge",
-  "description": "CLI tool that converts AI coding sessions between OpenAI Codex CLI and Anthropic Claude Code, and imports official Claude Chat data exports into Codex.",
+  "description": "Session bridge for OpenAI Codex CLI and Codex app, Anthropic Claude Code, and official Claude Chat data exports.",
   "keywords": "claude2codex, codex2claude, Claude Chat export, session converter, Codex CLI, Claude Code"
 }
 </script>
@@ -87,8 +87,8 @@
 
 <header class="wrap">
   <div class="panel-id">AI-SESSION-BRIDGE v0.3.0 · SIGNAL BOX No.1 · MIT LICENSE</div>
-  <h1><span class="c1">claude</span>2<span class="c2">codex</span> — switch your AI coding session onto the other line</h1>
-  <p class="sub">One CLI that converts sessions between <strong>Anthropic Claude Code</strong> and <strong>OpenAI Codex CLI</strong>, both directions — and imports official <strong>Claude Chat</strong> archives into Codex. Start a task in one tool, resume it in the other, or bring archived chats along.</p>
+  <h1><span class="c1">claude</span>2<span class="c2">codex</span> — move your context, not just your terminal</h1>
+  <p class="sub">Move local coding sessions between <strong>Claude Code</strong> and <strong>Codex CLI / Codex app</strong>. Or export conversations from the <strong>Claude web or desktop app</strong> and bring them into Codex.</p>
 
   <!-- crossover track diagram -->
   <svg class="diagram" viewBox="0 0 720 160" role="img" aria-label="Track diagram: a Codex session crosses over to the Claude line and vice versa">
@@ -114,7 +114,7 @@
 <hr class="rail codex">
 
 <section class="wrap on-codex">
-  <h2>Codex CLI → Claude Code</h2>
+  <h2>Codex CLI / app → Claude Code</h2>
   <pre><span class="p">$</span> npx tsx src/cli.ts <span class="cx">codex2claude</span> 019f73a5
 <span class="p"># bridged into ~/.claude/projects/&lt;your-project&gt;/019f73a5-….jsonl</span>
 <span class="p">$</span> claude --resume 019f73a5-3eca-7d10-8484-886430131e53
@@ -125,7 +125,7 @@
 <hr class="rail claude">
 
 <section class="wrap on-claude">
-  <h2>Claude Code → Codex CLI</h2>
+  <h2>Claude Code → Codex CLI / app</h2>
   <pre><span class="p">$</span> npx tsx src/cli.ts <span class="cl">claude2codex</span> ac6e1142
 <span class="p"># bridged into ~/.codex/sessions/… + registered in session index</span>
 <span class="p">$</span> codex resume ac6e1142-6fed-4eaf-b75f-2371404b858b
@@ -146,6 +146,14 @@
 </section>
 
 <hr class="rail claude">
+
+<section class="wrap on-claude">
+  <h2>Using the desktop and cloud apps</h2>
+  <p class="sub"><strong>Codex app:</strong> imported and converted threads include the events the app needs to display history, and the bridge registers them in the modern local state database when that database is available. <strong>Claude web / desktop app:</strong> use Claude's official data export, then import <code>conversations.json</code>.</p>
+  <p class="sub">This is intentionally not a live cloud-sync promise: the bridge does not sign in to Claude and can only transfer the messages and attachments included in your export.</p>
+</section>
+
+<hr class="rail codex">
 
 <section class="wrap">
   <h2>What gets mapped</h2>

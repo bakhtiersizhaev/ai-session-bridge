@@ -6,9 +6,9 @@
 [![Node >= 18](https://img.shields.io/badge/node-%3E%3D18-3FA69B.svg)](package.json)
 [![Website](https://img.shields.io/badge/website-github%20pages-D97757.svg)](https://bakhtiersizhaev.github.io/ai-session-bridge/)
 
-> **v0.3** — imports both Claude Code JSONL sessions and Claude Chat data exports, registers sessions in modern Codex, and renders imported messages in the Codex app UI.
+> **v0.3** — moves Claude Code sessions in both directions, imports Claude Chat data exports, and registers the resulting sessions for the Codex app UI.
 
-Bridge your AI coding sessions between **OpenAI Codex CLI** and **Anthropic Claude Code CLI**.
+Move your context between **OpenAI Codex CLI / Codex app**, **Anthropic Claude Code**, and exported conversations from the **Claude web or desktop app**.
 
 Start a task in one tool, continue in the other. Both store sessions as JSONL — this tool converts between their formats bidirectionally. Searching for a *claude codex bridge*, *claude2codex converter*, or a way to *transfer a Claude Code session to Codex* (or back)? This is it.
 
@@ -141,6 +141,20 @@ The dry-run report shows `withText` and `withoutText` counts, and textless
 conversations receive an explicit placeholder instead of pretending that their
 content was recovered.
 
+### Codex app and Claude app
+
+- **Codex app**: converted and imported sessions use current Codex rollout
+  records and UI events. When the local `state_5.sqlite` database, Node API,
+  schema, and reusable thread defaults are available, the bridge registers the
+  thread there so it appears in the app sidebar; `session_index.jsonl` remains
+  the fallback for other environments.
+- **Claude web / desktop app**: export your data from Claude, then point
+  `import-claude-chat` at the extracted `conversations.json`. The bridge does
+  not sign in to Claude or claim live cloud sync; it transfers only what the
+  official export contains.
+- **Claude Code**: local coding sessions remain fully bidirectional through
+  `claude2codex` and `codex2claude`.
+
 ### What's preserved / what's lost
 
 | Field | Status |
@@ -224,6 +238,20 @@ npx tsx src/cli.ts auto 019ced67 --dry-run
 `conversations.json` и создаёт отдельную сессию Codex для каждого разговора.
 Если Claude оставил в экспорте только метаданные без текста, это явно отражается
 в отчёте `withText` / `withoutText`; отсутствующий текст не подменяется выдуманным.
+
+### Codex app и Claude app
+
+- **Codex app**: импортированные и конвертированные сессии записываются в
+  актуальном формате rollout и содержат UI-события. Когда доступны локальная
+  `state_5.sqlite`, Node API, подходящая схема и базовые данные тредов, сессия
+  регистрируется в боковой панели приложения; в остальных окружениях остаётся
+  fallback через `session_index.jsonl`.
+- **Claude web / desktop app**: выгрузите данные из Claude и передайте
+  распакованный `conversations.json` команде `import-claude-chat`. Мост не
+  авторизуется в Claude и не обещает live cloud sync — переносится только то,
+  что попало в официальный экспорт.
+- **Claude Code**: локальные coding-сессии по-прежнему переносятся в обе
+  стороны командами `claude2codex` и `codex2claude`.
 
 ---
 
